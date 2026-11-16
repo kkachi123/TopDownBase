@@ -1,0 +1,21 @@
+.dungeon-actions {
+    margin-top: 10px;
+}
+
+.dungeon-actions__title {
+    -unity-font-style: bold;
+    margin-bottom: 4px;
+}
+
+.dungeon-actions__row {
+    flex-direction: row;
+}
+
+.dungeon-actions__button {
+    flex-grow: 1;
+    flex-basis: 0;
+}
+
+.dungeon-actions__info {
+    margin-top: 4px;
+}

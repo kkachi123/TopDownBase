@@ -10,6 +10,7 @@ namespace TopDownBase.Dungeon
     /// 보스 전 던전 구간을 생성하는 프로토타입.
     /// 방 배치(DungeonLayout) → 방 조립(바닥·벽·문) → 장애물 스탬프 → 스폰 위치 → NavMesh 순서로 만든다.
     /// 모든 형상은 기본 도형이며, 생성물은 "Generated" 자식 아래에만 놓인다.
+    /// Play 중에는 물론 에디터(편집 모드)에서도 생성할 수 있고, 생성물은 씬에 저장할 수 있다.
     /// </summary>
     [DisallowMultipleComponent]
     public class DungeonGenerator : MonoBehaviour
@@ -20,7 +21,9 @@ namespace TopDownBase.Dungeon
 
         [Header("Seed")]
         public int Seed = 12345;
+        [Tooltip("Play 시작 시 새 시드를 뽑는다. GenerateOnAwake가 켜져 있을 때만 쓰인다.")]
         public bool RandomizeSeedOnAwake = true;
+        [Tooltip("켜면 Play 시작 시 다시 생성한다. 끄면 씬에 저장된 맵을 그대로 쓴다.")]
         public bool GenerateOnAwake = true;
 
         [Header("Layout")]
@@ -81,13 +84,28 @@ namespace TopDownBase.Dungeon
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         private static readonly int ColorId = Shader.PropertyToID("_Color");
 
-        private readonly List<DungeonRoom> _rooms = new List<DungeonRoom>();
-        private MaterialPropertyBlock _propertyBlock;
+        // 색상별로 하나씩 만든 머티리얼. 씬에 함께 저장되어 다시 열어도 색이 유지되고, Clear에서 지운다.
+        [SerializeField, HideInInspector] private List<Material> _generatedMaterials = new List<Material>();
+
+        // 생성 결과에 대한 참조. 씬에 함께 저장되므로 저장된 맵을 다시 쓸 때 이름이나 타입으로 찾지 않는다.
+        [SerializeField, HideInInspector] private Transform _generatedRoot;
+        [SerializeField, HideInInspector] private List<DungeonRoom> _rooms = new List<DungeonRoom>();
+        [SerializeField, HideInInspector] private DungeonRoom _startRoom;
+        [SerializeField, HideInInspector] private DungeonRoom _bossGateRoom;
+        [SerializeField, HideInInspector] private NavMeshSurface _navMeshSurface;
+
+        private readonly Dictionary<Color, Material> _materialsByColor = new Dictionary<Color, Material>();
 
         public DungeonLayout Layout { get; private set; }
         public IReadOnlyList<DungeonRoom> Rooms => _rooms;
-        public DungeonRoom StartRoom { get; private set; }
-        public DungeonRoom BossGateRoom { get; private set; }
+        public DungeonRoom StartRoom => _startRoom;
+        public DungeonRoom BossGateRoom => _bossGateRoom;
+
+        /// <summary>씬에 생성물이 있는지. 에디터에서 만든 뒤 저장한 맵도 포함한다.</summary>
+        public bool HasGeneratedMap => _generatedRoot != null;
+
+        /// <summary>마지막 생성(또는 저장된 맵 인식)의 한 줄 요약. 인스펙터 표시용이며 저장되지 않는다.</summary>
+        public string LastReport { get; private set; }
 
         /// <summary>플레이어를 놓을 위치(시작 방 중앙).</summary>
         public Vector3 StartPosition => StartRoom != null ? StartRoom.transform.position : transform.position;
@@ -97,10 +115,20 @@ namespace TopDownBase.Dungeon
 
         private Vector2 InteriorSize => new Vector2(RoomTiles.x * TileSize, RoomTiles.y * TileSize);
 
+        private void OnValidate()
+        {
+            // 문과 벽을 만들 수 있는 최소 크기를 보장한다.
+            GridSize = Vector2Int.Max(GridSize, Vector2Int.one);
+            RoomTiles = Vector2Int.Max(RoomTiles, new Vector2Int(4, 4));
+            ObstacleCount = Vector2Int.Max(ObstacleCount, Vector2Int.zero);
+            EnemySpawnCount = Vector2Int.Max(EnemySpawnCount, Vector2Int.zero);
+        }
+
         private void Awake()
         {
             if (!GenerateOnAwake)
             {
+                AdoptExistingMap();
                 return;
             }
 
@@ -112,14 +140,12 @@ namespace TopDownBase.Dungeon
             Generate();
         }
 
-        [ContextMenu("Generate With Random Seed")]
         public void GenerateWithRandomSeed()
         {
             Seed = System.Environment.TickCount;
             Generate();
         }
 
-        [ContextMenu("Generate")]
         public void Generate()
         {
             Clear();
@@ -137,6 +163,7 @@ namespace TopDownBase.Dungeon
 
             Transform root = new GameObject(GeneratedRootName).transform;
             root.SetParent(transform, false);
+            _generatedRoot = root;
 
             var roomsByCell = new Dictionary<Vector2Int, DungeonRoom>();
             foreach (DungeonLayoutRoom data in Layout.Rooms)
@@ -146,8 +173,8 @@ namespace TopDownBase.Dungeon
                 _rooms.Add(room);
             }
 
-            StartRoom = roomsByCell[Layout.StartCell];
-            BossGateRoom = roomsByCell[Layout.BossGateCell];
+            _startRoom = roomsByCell[Layout.StartCell];
+            _bossGateRoom = roomsByCell[Layout.BossGateCell];
 
             foreach (DungeonLayoutRoom data in Layout.Rooms)
             {
@@ -162,9 +189,10 @@ namespace TopDownBase.Dungeon
                 navMeshReport = BakeAndCheckNavMesh();
             }
 
-            Debug.Log($"[Dungeon] seed {Seed}: rooms {Layout.Rooms.Count}, boss path {Layout.BossPathLength}, " +
-                      $"item rooms {Layout.ItemRoomCount}, layout attempts {Layout.Attempts}, " +
-                      $"requirements met {Layout.MeetsRequirements}, navmesh {navMeshReport}", this);
+            LastReport = $"seed {Seed}: rooms {Layout.Rooms.Count}, boss path {Layout.BossPathLength}, " +
+                         $"item rooms {Layout.ItemRoomCount}, layout attempts {Layout.Attempts}, " +
+                         $"requirements met {Layout.MeetsRequirements}, navmesh {navMeshReport}";
+            Debug.Log($"[Dungeon] {LastReport}", this);
 
             if (!Layout.MeetsRequirements)
             {
@@ -173,31 +201,62 @@ namespace TopDownBase.Dungeon
             }
         }
 
-        [ContextMenu("Clear")]
+        /// <summary>
+        /// 다시 생성하지 않고 씬에 저장된 맵을 그대로 쓴다. 저장된 방 참조를 그대로 쓰고 NavMesh만 새로 굽는다.
+        /// 에디터에서 만든 맵을 손으로 고쳐 쓰는 경우를 위한 경로이며, 이때 Layout은 비어 있다.
+        /// </summary>
+        public bool AdoptExistingMap()
+        {
+            Layout = null;
+
+            if (_generatedRoot == null)
+            {
+                _rooms.Clear();
+                _startRoom = null;
+                _bossGateRoom = null;
+                LastReport = null;
+                return false;
+            }
+
+            // 에디터에서 손으로 지운 방은 목록에서 뺀다.
+            _rooms.RemoveAll(room => room == null);
+
+            string navMeshReport = BuildNavMesh ? BakeAndCheckNavMesh() : "skipped";
+            LastReport = $"saved map: rooms {_rooms.Count}, navmesh {navMeshReport}";
+            Debug.Log($"[Dungeon] {LastReport}", this);
+            return true;
+        }
+
         public void Clear()
         {
             _rooms.Clear();
-            StartRoom = null;
-            BossGateRoom = null;
+            _startRoom = null;
+            _bossGateRoom = null;
             Layout = null;
+            LastReport = null;
 
-            var surface = GetComponent<NavMeshSurface>();
-            if (surface != null)
+            if (_navMeshSurface != null)
             {
-                surface.RemoveData();
+                ReleaseNavMeshData(_navMeshSurface);
             }
 
-            for (int i = transform.childCount - 1; i >= 0; i--)
+            if (_generatedRoot != null)
             {
-                Transform child = transform.GetChild(i);
-                if (child.name != GeneratedRootName)
-                {
-                    continue;
-                }
-
                 // 같은 프레임에 다시 생성하므로 이전 생성물이 NavMesh 수집에 잡히지 않도록 즉시 지운다.
-                DestroyImmediate(child.gameObject);
+                DestroyImmediate(_generatedRoot.gameObject);
+                _generatedRoot = null;
             }
+
+            foreach (Material material in _generatedMaterials)
+            {
+                if (material != null)
+                {
+                    DestroyImmediate(material);
+                }
+            }
+
+            _generatedMaterials.Clear();
+            _materialsByColor.Clear();
         }
 
         /// <summary>던전 전체를 감싸는 월드 영역. 전체 보기 카메라에 쓴다.</summary>
@@ -464,17 +523,49 @@ namespace TopDownBase.Dungeon
 
         private string BakeAndCheckNavMesh()
         {
-            var surface = GetComponent<NavMeshSurface>();
-            if (surface == null)
+            // 처음 한 번만 컴포넌트를 붙이고, 이후에는 저장된 참조를 쓴다.
+            if (_navMeshSurface == null && !TryGetComponent(out _navMeshSurface))
             {
-                surface = gameObject.AddComponent<NavMeshSurface>();
+                _navMeshSurface = gameObject.AddComponent<NavMeshSurface>();
             }
 
+            NavMeshSurface surface = _navMeshSurface;
             surface.collectObjects = CollectObjects.Children;
             surface.useGeometry = NavMeshCollectGeometry.PhysicsColliders;
 
             Physics.SyncTransforms();
             surface.BuildNavMesh();
+            string report = CheckNavMesh();
+
+            if (!Application.isPlaying)
+            {
+                // 편집 모드에서는 검사만 하고 데이터를 남기지 않는다. 남기면 저장 시 NavMesh가 씬 파일에 통째로 들어간다.
+                // Play 시작 시 항상 다시 굽는다.
+                ReleaseNavMeshData(surface);
+                report += " (edit mode: checked, not kept)";
+            }
+
+            return report;
+        }
+
+        /// <summary>이 생성기가 구운 NavMesh를 내리고 메모리에서 지운다.</summary>
+        private static void ReleaseNavMeshData(NavMeshSurface surface)
+        {
+            surface.RemoveData();
+            NavMeshData data = surface.navMeshData;
+            surface.navMeshData = null;
+            if (data != null)
+            {
+                DestroyImmediate(data);
+            }
+        }
+
+        private string CheckNavMesh()
+        {
+            if (StartRoom == null || BossGateRoom == null)
+            {
+                return "built, start/boss room missing";
+            }
 
             float sampleRange = TileSize * 2f;
             if (!NavMesh.SamplePosition(StartRoom.transform.position, out NavMeshHit startHit, sampleRange, NavMesh.AllAreas)
@@ -593,27 +684,44 @@ namespace TopDownBase.Dungeon
             }
 
             var meshRenderer = primitive.GetComponent<MeshRenderer>();
-            Material material = BaseMaterial;
-            if (material == null && GraphicsSettings.currentRenderPipeline != null)
-            {
-                material = GraphicsSettings.currentRenderPipeline.defaultMaterial;
-            }
-
-            if (material != null)
-            {
-                meshRenderer.sharedMaterial = material;
-            }
-
-            if (_propertyBlock == null)
-            {
-                _propertyBlock = new MaterialPropertyBlock();
-            }
-
-            _propertyBlock.SetColor(BaseColorId, color);
-            _propertyBlock.SetColor(ColorId, color);
-            meshRenderer.SetPropertyBlock(_propertyBlock);
+            meshRenderer.sharedMaterial = GetMaterial(color, meshRenderer.sharedMaterial);
 
             return primitive;
+        }
+
+        /// <summary>같은 색은 머티리얼 하나를 함께 쓴다. 한 번 생성에 만들어지는 머티리얼은 색 종류 수(10개 안팎)다.</summary>
+        private Material GetMaterial(Color color, Material primitiveDefault)
+        {
+            if (_materialsByColor.TryGetValue(color, out Material cached) && cached != null)
+            {
+                return cached;
+            }
+
+            Material source = BaseMaterial;
+            if (source == null && GraphicsSettings.currentRenderPipeline != null)
+            {
+                source = GraphicsSettings.currentRenderPipeline.defaultMaterial;
+            }
+
+            if (source == null)
+            {
+                source = primitiveDefault;
+            }
+
+            var material = new Material(source) { name = $"Dungeon_{ColorUtility.ToHtmlStringRGB(color)}" };
+            if (material.HasProperty(BaseColorId))
+            {
+                material.SetColor(BaseColorId, color);
+            }
+
+            if (material.HasProperty(ColorId))
+            {
+                material.SetColor(ColorId, color);
+            }
+
+            _materialsByColor[color] = material;
+            _generatedMaterials.Add(material);
+            return material;
         }
     }
 }

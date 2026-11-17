@@ -6,6 +6,7 @@ namespace TopDownBase.Dungeon.Prototype
     /// <summary>
     /// 생성된 던전을 걸어 다니며 방 크기와 구조를 확인하기 위한 임시 이동체.
     /// 게임의 플레이어 캐릭터가 아니며 TopDown Engine과 연결되어 있지 않다.
+    /// 포털과 열쇠가 반응하려면 이 오브젝트의 태그가 Player여야 한다.
     /// WASD: 이동, R: 새 시드로 다시 생성, L: 현재 방의 문 잠금 전환.
     /// </summary>
     [RequireComponent(typeof(CharacterController))]

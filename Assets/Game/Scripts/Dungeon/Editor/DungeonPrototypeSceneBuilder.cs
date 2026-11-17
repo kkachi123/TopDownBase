@@ -45,7 +45,8 @@ namespace TopDownBase.Dungeon.Editor
             var generatorObject = new GameObject("DungeonGenerator");
             var generator = generatorObject.AddComponent<DungeonGenerator>();
 
-            var walkerObject = new GameObject("PrototypeWalker");
+            // 포털과 열쇠는 Player 태그에 반응한다.
+            var walkerObject = new GameObject("PrototypeWalker") { tag = DungeonPortal.TravellerTag };
             var controller = walkerObject.AddComponent<CharacterController>();
             controller.height = 2f;
             controller.radius = 0.5f;

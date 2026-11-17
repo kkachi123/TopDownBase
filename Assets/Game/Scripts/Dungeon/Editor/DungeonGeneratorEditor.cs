@@ -17,6 +17,7 @@ namespace TopDownBase.Dungeon.Editor
         private const string StyleSheetPath = "Assets/Game/Scripts/Dungeon/Editor/DungeonGeneratorEditor.uss";
 
         private HelpBox _status;
+        private HelpBox _portal;
         private HelpBox _playBehaviour;
         private Button _clearButton;
 
@@ -55,6 +56,10 @@ namespace TopDownBase.Dungeon.Editor
             _status = new HelpBox(string.Empty, HelpBoxMessageType.Info);
             _status.AddToClassList("dungeon-actions__info");
             actions.Add(_status);
+
+            _portal = new HelpBox(string.Empty, HelpBoxMessageType.Info);
+            _portal.AddToClassList("dungeon-actions__info");
+            actions.Add(_portal);
 
             _playBehaviour = new HelpBox(string.Empty, HelpBoxMessageType.None);
             _playBehaviour.AddToClassList("dungeon-actions__info");
@@ -97,6 +102,55 @@ namespace TopDownBase.Dungeon.Editor
             Refresh();
         }
 
+        /// <summary>포털이 불러올 보스 씬과 열쇠 상태를 알려 준다. 씬 이름이 비었거나 빌드 목록에 없으면 경고한다.</summary>
+        private void RefreshPortal(DungeonGenerator generator, bool hasMap)
+        {
+            string sceneName = generator.BossSceneName;
+            if (string.IsNullOrEmpty(sceneName))
+            {
+                _portal.text = "Boss Scene Name이 비어 있어 포털이 씬을 불러오지 않습니다.";
+                _portal.messageType = HelpBoxMessageType.Warning;
+                return;
+            }
+
+            if (!IsEnabledInBuildSettings(sceneName))
+            {
+                _portal.text = $"'{sceneName}' 씬이 Build Settings의 씬 목록에 없거나 꺼져 있습니다. 등록해야 포털이 동작합니다.";
+                _portal.messageType = HelpBoxMessageType.Warning;
+                return;
+            }
+
+            string keyText;
+            if (!generator.LockPortalWithKey)
+            {
+                keyText = "잠금 없음";
+            }
+            else if (!hasMap)
+            {
+                keyText = "아이템 방의 열쇠로 열림";
+            }
+            else
+            {
+                keyText = generator.KeyPickup != null ? "아이템 방의 열쇠로 열림" : "아이템 방이 없어 열린 상태";
+            }
+
+            _portal.text = $"보스 포털: '{sceneName}' 씬으로 이동. {keyText}.";
+            _portal.messageType = HelpBoxMessageType.Info;
+        }
+
+        private static bool IsEnabledInBuildSettings(string sceneName)
+        {
+            foreach (EditorBuildSettingsScene scene in EditorBuildSettings.scenes)
+            {
+                if (scene.enabled && System.IO.Path.GetFileNameWithoutExtension(scene.path) == sceneName)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private void Refresh()
         {
             if (_status == null)
@@ -130,6 +184,8 @@ namespace TopDownBase.Dungeon.Editor
                 _status.text = $"씬에 저장된 맵이 있습니다. 방 {generator.Rooms.Count}개, 시드 {generator.Seed}.";
                 _status.messageType = HelpBoxMessageType.Info;
             }
+
+            RefreshPortal(generator, hasMap);
 
             if (!generator.GenerateOnAwake)
             {

@@ -8,7 +8,8 @@ namespace TopDownBase.Dungeon
 {
     /// <summary>
     /// 보스 전 던전 구간을 생성하는 프로토타입.
-    /// 방 배치(DungeonLayout) → 방 조립(바닥·벽·문) → 장애물 스탬프 → 스폰 위치 → NavMesh 순서로 만든다.
+    /// 방 배치(DungeonLayout) → 방 조립(바닥·벽·문) → 장애물 스탬프 → 스폰 위치 → 보스 포털과 열쇠
+    /// → 주변 환경 → NavMesh 순서로 만든다.
     /// 모든 형상은 기본 도형이며, 생성물은 "Generated" 자식 아래에만 놓인다.
     /// Play 중에는 물론 에디터(편집 모드)에서도 생성할 수 있고, 생성물은 씬에 저장할 수 있다.
     /// </summary>
@@ -18,6 +19,9 @@ namespace TopDownBase.Dungeon
         private const string GeneratedRootName = "Generated";
         private const float FloorThickness = 0.2f;
         private const int PlacementTries = 20;
+        // 방 배치와 섞이지 않도록 시드에서 따로 파생하는 난수의 구분값.
+        private const int KeySeedSalt = 0x4B4559;
+        private const int EnvironmentSeedSalt = 0x454E56;
 
         [Header("Seed")]
         public int Seed = 12345;
@@ -56,6 +60,25 @@ namespace TopDownBase.Dungeon
         [Min(0)] public int SpawnDoorClearance = 3;
         [Min(1)] public int SpawnSpacing = 2;
 
+        [Header("Boss portal")]
+        [Tooltip("포털에 들어가면 불러올 보스 씬 이름. Build Settings에 등록된 씬이어야 한다. 비워 두면 포털은 표식으로만 남는다.")]
+        public string BossSceneName;
+        [Tooltip("아이템 방 중 한 곳에 열쇠를 두고, 얻기 전에는 포털을 잠근다.")]
+        public bool LockPortalWithKey = true;
+
+        [Header("Environment")]
+        public bool BuildEnvironment = true;
+        [Tooltip("방이 없는 격자 칸과 외곽에 놓을 프리팹. 비워 두면 바닥만 깐다.")]
+        public GameObject[] EnvironmentPrefabs;
+        [Tooltip("던전 바깥쪽으로 환경을 넓힐 칸 수")]
+        [Min(0)] public int EnvironmentBorderCells = 1;
+        [Tooltip("빈 칸 하나에 놓는 프리팹 수 (최소, 최대)")]
+        public Vector2Int EnvironmentPerCell = new Vector2Int(3, 6);
+        [Tooltip("프리팹 크기 배율 (최소, 최대)")]
+        public Vector2 EnvironmentScale = new Vector2(0.8f, 1.3f);
+        [Tooltip("방의 남쪽에 붙은 빈 칸에서 방 쪽으로 비워 두는 거리(유닛). 카메라가 남쪽에서 내려다보므로 가까운 나무가 방 바닥을 가린다.")]
+        [Min(0f)] public float EnvironmentCameraClearance = 8f;
+
         [Header("NavMesh")]
         public bool BuildNavMesh = true;
 
@@ -70,6 +93,9 @@ namespace TopDownBase.Dungeon
         public Color EnemyColor = new Color(0.85f, 0.2f, 0.2f);
         public Color ItemColor = new Color(0.95f, 0.8f, 0.2f);
         public Color BossGateColor = new Color(0.6f, 0.25f, 0.85f);
+        public Color PortalLockedColor = new Color(0.3f, 0.28f, 0.33f);
+        public Color KeyColor = new Color(0.2f, 0.85f, 0.9f);
+        public Color GroundColor = new Color(0.33f, 0.45f, 0.28f);
 
         /// <summary>기둥·낮은 벽 등 작은 장애물 묶음. 칸 좌표는 기준점(왼쪽 아래)에서의 오프셋이다.</summary>
         private static readonly Vector2Int[][] Stamps =
@@ -93,6 +119,8 @@ namespace TopDownBase.Dungeon
         [SerializeField, HideInInspector] private DungeonRoom _startRoom;
         [SerializeField, HideInInspector] private DungeonRoom _bossGateRoom;
         [SerializeField, HideInInspector] private NavMeshSurface _navMeshSurface;
+        [SerializeField, HideInInspector] private DungeonPortal _bossPortal;
+        [SerializeField, HideInInspector] private DungeonKeyPickup _keyPickup;
 
         private readonly Dictionary<Color, Material> _materialsByColor = new Dictionary<Color, Material>();
 
@@ -100,6 +128,10 @@ namespace TopDownBase.Dungeon
         public IReadOnlyList<DungeonRoom> Rooms => _rooms;
         public DungeonRoom StartRoom => _startRoom;
         public DungeonRoom BossGateRoom => _bossGateRoom;
+        /// <summary>보스 입구 방의 포털.</summary>
+        public DungeonPortal BossPortal => _bossPortal;
+        /// <summary>포털을 여는 열쇠. 열쇠 방이 없는 배치나 잠금을 끈 경우에는 null이다.</summary>
+        public DungeonKeyPickup KeyPickup => _keyPickup;
 
         /// <summary>씬에 생성물이 있는지. 에디터에서 만든 뒤 저장한 맵도 포함한다.</summary>
         public bool HasGeneratedMap => _generatedRoot != null;
@@ -119,6 +151,8 @@ namespace TopDownBase.Dungeon
         {
             // 문과 벽을 만들 수 있는 최소 크기를 보장한다.
             GridSize = Vector2Int.Max(GridSize, Vector2Int.one);
+            EnvironmentPerCell = Vector2Int.Max(EnvironmentPerCell, Vector2Int.zero);
+            EnvironmentScale = Vector2.Max(EnvironmentScale, Vector2.one * 0.01f);
             RoomTiles = Vector2Int.Max(RoomTiles, new Vector2Int(4, 4));
             ObstacleCount = Vector2Int.Max(ObstacleCount, Vector2Int.zero);
             EnemySpawnCount = Vector2Int.Max(EnemySpawnCount, Vector2Int.zero);
@@ -161,6 +195,11 @@ namespace TopDownBase.Dungeon
                 MaxAttempts = MaxLayoutAttempts
             }, rng);
 
+            if (LockPortalWithKey)
+            {
+                Layout.PickKeyRoom(new System.Random(Seed ^ KeySeedSalt));
+            }
+
             Transform root = new GameObject(GeneratedRootName).transform;
             root.SetParent(transform, false);
             _generatedRoot = root;
@@ -182,6 +221,12 @@ namespace TopDownBase.Dungeon
             }
 
             BuildCornerPosts(root);
+            BuildBossPortalAndKey(roomsByCell);
+
+            if (BuildEnvironment)
+            {
+                BuildEnvironmentAround(root, new System.Random(Seed ^ EnvironmentSeedSalt));
+            }
 
             string navMeshReport = "skipped";
             if (BuildNavMesh)
@@ -189,10 +234,18 @@ namespace TopDownBase.Dungeon
                 navMeshReport = BakeAndCheckNavMesh();
             }
 
+            string portalReport = _bossPortal.HasDestination
+                ? (_bossPortal.IsLocked ? "locked by key" : "open")
+                : "no destination";
             LastReport = $"seed {Seed}: rooms {Layout.Rooms.Count}, boss path {Layout.BossPathLength}, " +
                          $"item rooms {Layout.ItemRoomCount}, layout attempts {Layout.Attempts}, " +
-                         $"requirements met {Layout.MeetsRequirements}, navmesh {navMeshReport}";
+                         $"requirements met {Layout.MeetsRequirements}, portal {portalReport}, navmesh {navMeshReport}";
             Debug.Log($"[Dungeon] {LastReport}", this);
+
+            if (string.IsNullOrEmpty(BossSceneName))
+            {
+                Debug.LogWarning("[Dungeon] BossSceneName이 비어 있어 포털이 씬을 불러오지 않습니다.", this);
+            }
 
             if (!Layout.MeetsRequirements)
             {
@@ -232,6 +285,8 @@ namespace TopDownBase.Dungeon
             _rooms.Clear();
             _startRoom = null;
             _bossGateRoom = null;
+            _bossPortal = null;
+            _keyPickup = null;
             Layout = null;
             LastReport = null;
 
@@ -293,6 +348,10 @@ namespace TopDownBase.Dungeon
 
             var room = roomObject.AddComponent<DungeonRoom>();
             room.Initialize(data.Role, data.Cell, data.DistanceFromStart, InteriorSize);
+            if (data.HasKey)
+            {
+                room.MarkAsKeyRoom();
+            }
 
             // 바닥은 벽 아래와 문턱까지 덮도록 방 간격 크기로 만든다. 역할 색을 옅게 섞어 전체 보기에서 구분한다.
             Color floorColor = Color.Lerp(FloorColor, RoleColor(data.Role), data.Role == DungeonRoomRole.Combat ? 0f : 0.3f);
@@ -311,10 +370,12 @@ namespace TopDownBase.Dungeon
                     CreateMarker("PlayerStart", roomTransform, Vector3.zero, StartColor);
                     break;
                 case DungeonRoomRole.Item:
-                    CreateMarker("ItemSpawn", roomTransform, Vector3.zero, ItemColor);
-                    break;
-                case DungeonRoomRole.BossGate:
-                    CreateMarker("BossGate", roomTransform, Vector3.zero, BossGateColor);
+                    // 열쇠 방에는 아이템 표식 대신 열쇠가 놓인다(BuildBossPortalAndKey).
+                    if (!data.HasKey)
+                    {
+                        CreateMarker("ItemSpawn", roomTransform, Vector3.zero, ItemColor);
+                    }
+
                     break;
             }
 
@@ -519,6 +580,140 @@ namespace TopDownBase.Dungeon
             }
         }
 
+        // ---------- 보스 포털과 열쇠 ----------
+
+        /// <summary>
+        /// 보스 입구 방에 포털을, 열쇠 방에 열쇠를 만들고 서로 연결한다.
+        /// 포털은 불러올 보스 씬의 이름만 알며 투기장의 크기나 구성에는 의존하지 않는다.
+        /// 열쇠 방이 없는 배치에서는 포털을 열어 둔 채로 만들어 진행이 막히지 않게 한다.
+        /// </summary>
+        private void BuildBossPortalAndKey(Dictionary<Vector2Int, DungeonRoom> roomsByCell)
+        {
+            DungeonLayoutRoom keyRoom = LockPortalWithKey ? Layout.KeyRoom : null;
+
+            float portalSize = TileSize * 1.5f;
+            GameObject portalObject = CreateTriggerZone("BossPortal", _bossGateRoom.transform, Vector3.zero, portalSize);
+            GameObject portalVisual = CreateMarker("Visual", portalObject.transform, Vector3.zero, BossGateColor);
+            portalVisual.transform.localScale = new Vector3(portalSize, 0.02f, portalSize);
+
+            _bossPortal = portalObject.AddComponent<DungeonPortal>();
+            _bossPortal.Initialize(BossSceneName, keyRoom != null, portalVisual.GetComponent<Renderer>(),
+                GetMaterial(PortalLockedColor, null), GetMaterial(BossGateColor, null));
+
+            if (keyRoom == null)
+            {
+                return;
+            }
+
+            GameObject keyObject = CreateTriggerZone("Key", roomsByCell[keyRoom.Cell].transform, Vector3.zero, TileSize);
+            GameObject keyVisual = CreatePrimitive(PrimitiveType.Cube, "Visual", keyObject.transform,
+                new Vector3(0f, 1f, 0f), Vector3.one * (TileSize * 0.35f), KeyColor, false);
+            keyVisual.transform.localRotation = Quaternion.Euler(45f, 45f, 0f);
+
+            _keyPickup = keyObject.AddComponent<DungeonKeyPickup>();
+            _keyPickup.Initialize(_bossPortal);
+        }
+
+        /// <summary>대상이 들어오면 반응하는 보이지 않는 구역. 사람 키 높이의 트리거 상자다.</summary>
+        private static GameObject CreateTriggerZone(string objectName, Transform parent, Vector3 localPosition, float size)
+        {
+            var zone = new GameObject(objectName);
+            zone.transform.SetParent(parent, false);
+            zone.transform.localPosition = localPosition;
+
+            var trigger = zone.AddComponent<BoxCollider>();
+            trigger.isTrigger = true;
+            trigger.size = new Vector3(size, 2f, size);
+            trigger.center = new Vector3(0f, 1f, 0f);
+            return zone;
+        }
+
+        // ---------- 주변 환경 ----------
+
+        /// <summary>
+        /// 던전 아래에 바닥을 깔고, 방이 없는 칸과 외곽 칸에 환경 프리팹을 흩어 놓는다.
+        /// 환경은 길 찾기와 무관하므로 NavMesh 빌드에서 제외한다.
+        /// </summary>
+        private void BuildEnvironmentAround(Transform root, System.Random rng)
+        {
+            Transform environment = new GameObject("Environment").transform;
+            environment.SetParent(root, false);
+            environment.gameObject.AddComponent<NavMeshModifier>().ignoreFromBuild = true;
+
+            Vector2Int min = Layout.Rooms[0].Cell;
+            Vector2Int max = min;
+            foreach (DungeonLayoutRoom room in Layout.Rooms)
+            {
+                min = Vector2Int.Min(min, room.Cell);
+                max = Vector2Int.Max(max, room.Cell);
+            }
+
+            min -= Vector2Int.one * EnvironmentBorderCells;
+            max += Vector2Int.one * EnvironmentBorderCells;
+
+            // 바닥 윗면을 방 바닥보다 살짝 낮춰 방 안에서는 보이지 않게 한다. 충돌체는 두지 않는다.
+            const float groundThickness = 0.1f;
+            Vector2 cellCount = new Vector2(max.x - min.x + 1, max.y - min.y + 1);
+            var groundCenter = new Vector3(
+                (min.x + max.x) * 0.5f * CellPitch.x,
+                -0.02f - groundThickness * 0.5f,
+                (min.y + max.y) * 0.5f * CellPitch.y);
+            CreateBox("Ground", environment, groundCenter,
+                new Vector3(cellCount.x * CellPitch.x, groundThickness, cellCount.y * CellPitch.y), GroundColor, false);
+
+            if (EnvironmentPrefabs == null || EnvironmentPrefabs.Length == 0)
+            {
+                return;
+            }
+
+            // 이웃 방의 벽에 파묻히지 않도록 칸 가장자리에서 띄우는 거리.
+            float edgeMargin = WallThickness + 1f;
+            Vector2 half = CellPitch * 0.5f - Vector2.one * edgeMargin;
+
+            for (int x = min.x; x <= max.x; x++)
+            {
+                for (int y = min.y; y <= max.y; y++)
+                {
+                    var cell = new Vector2Int(x, y);
+                    if (Layout.Contains(cell))
+                    {
+                        continue;
+                    }
+
+                    // 바로 북쪽이 방이면 그 방 쪽 띠를 비워 카메라가 방 바닥을 볼 수 있게 한다.
+                    bool roomToTheNorth = Layout.Contains(cell + Vector2Int.up);
+                    float maxZ = half.y - (roomToTheNorth ? EnvironmentCameraClearance : 0f);
+                    if (half.x <= 0f || maxZ <= -half.y)
+                    {
+                        continue;
+                    }
+
+                    int count = rng.Next(EnvironmentPerCell.x, Mathf.Max(EnvironmentPerCell.x, EnvironmentPerCell.y) + 1);
+                    for (int i = 0; i < count; i++)
+                    {
+                        GameObject prefab = EnvironmentPrefabs[rng.Next(EnvironmentPrefabs.Length)];
+                        var offset = new Vector3(
+                            Mathf.Lerp(-half.x, half.x, (float)rng.NextDouble()),
+                            0f,
+                            Mathf.Lerp(-half.y, maxZ, (float)rng.NextDouble()));
+                        float yaw = (float)rng.NextDouble() * 360f;
+                        float scale = Mathf.Lerp(EnvironmentScale.x, Mathf.Max(EnvironmentScale.x, EnvironmentScale.y),
+                            (float)rng.NextDouble());
+                        if (prefab == null)
+                        {
+                            continue;
+                        }
+
+                        GameObject instance = Instantiate(prefab, environment);
+                        instance.name = prefab.name;
+                        instance.transform.localPosition = new Vector3(x * CellPitch.x, 0f, y * CellPitch.y) + offset;
+                        instance.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+                        instance.transform.localScale = prefab.transform.localScale * scale;
+                    }
+                }
+            }
+        }
+
         // ---------- NavMesh ----------
 
         private string BakeAndCheckNavMesh()
@@ -706,6 +901,13 @@ namespace TopDownBase.Dungeon
             if (source == null)
             {
                 source = primitiveDefault;
+            }
+
+            if (source == null)
+            {
+                // 렌더 파이프라인 기본 머티리얼이 없는 빌드에서 BaseMaterial도 비어 있는 경우.
+                Debug.LogError("[Dungeon] 머티리얼을 만들 바탕이 없습니다. BaseMaterial을 지정하세요.", this);
+                return null;
             }
 
             var material = new Material(source) { name = $"Dungeon_{ColorUtility.ToHtmlStringRGB(color)}" };

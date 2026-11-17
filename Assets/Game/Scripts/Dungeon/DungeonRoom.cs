@@ -13,6 +13,7 @@ namespace TopDownBase.Dungeon
         [SerializeField] private Vector2Int _cell;
         [SerializeField] private int _distanceFromStart;
         [SerializeField] private Vector2 _interiorSize;
+        [SerializeField] private bool _hasKey;
         [SerializeField] private List<Transform> _enemySpawnPoints = new List<Transform>();
         [SerializeField] private List<GameObject> _doorBlockers = new List<GameObject>();
 
@@ -21,6 +22,8 @@ namespace TopDownBase.Dungeon
         public int DistanceFromStart => _distanceFromStart;
         /// <summary>벽 안쪽 바닥의 가로(x)·세로(z) 크기(유닛).</summary>
         public Vector2 InteriorSize => _interiorSize;
+        /// <summary>보스 포털을 여는 열쇠가 놓인 방인지.</summary>
+        public bool HasKey => _hasKey;
         public IReadOnlyList<Transform> EnemySpawnPoints => _enemySpawnPoints;
         public bool DoorsLocked { get; private set; }
 
@@ -30,6 +33,11 @@ namespace TopDownBase.Dungeon
             _cell = cell;
             _distanceFromStart = distanceFromStart;
             _interiorSize = interiorSize;
+        }
+
+        public void MarkAsKeyRoom()
+        {
+            _hasKey = true;
         }
 
         public void AddEnemySpawnPoint(Transform point)

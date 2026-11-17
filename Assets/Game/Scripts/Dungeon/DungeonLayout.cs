@@ -33,6 +33,8 @@ namespace TopDownBase.Dungeon
         public Vector2Int Cell;
         public DungeonRoomRole Role = DungeonRoomRole.Combat;
         public int DistanceFromStart;
+        /// <summary>보스 포털을 여는 열쇠가 놓이는 방인지.</summary>
+        public bool HasKey;
         public readonly List<Vector2Int> Neighbours = new List<Vector2Int>(4);
     }
 
@@ -56,6 +58,8 @@ namespace TopDownBase.Dungeon
         public int ItemRoomCount { get; private set; }
         public bool MeetsRequirements { get; private set; }
         public int Attempts { get; private set; }
+        /// <summary>열쇠가 놓이는 방. 아이템 방이 없는 배치에서는 null이다.</summary>
+        public DungeonLayoutRoom KeyRoom { get; private set; }
 
         private readonly Dictionary<Vector2Int, DungeonLayoutRoom> _roomsByCell =
             new Dictionary<Vector2Int, DungeonLayoutRoom>();
@@ -100,6 +104,31 @@ namespace TopDownBase.Dungeon
 
             best.Attempts = maxAttempts;
             return best;
+        }
+
+        /// <summary>
+        /// 아이템 방 중 하나를 열쇠 방으로 정한다. 방 배치와 다른 난수를 받아,
+        /// 열쇠 기능을 넣기 전과 같은 시드가 같은 방 배치와 장애물을 만들도록 한다.
+        /// </summary>
+        public DungeonLayoutRoom PickKeyRoom(System.Random rng)
+        {
+            var itemRooms = new List<DungeonLayoutRoom>();
+            foreach (DungeonLayoutRoom room in Rooms)
+            {
+                room.HasKey = false;
+                if (room.Role == DungeonRoomRole.Item)
+                {
+                    itemRooms.Add(room);
+                }
+            }
+
+            KeyRoom = itemRooms.Count > 0 ? itemRooms[rng.Next(itemRooms.Count)] : null;
+            if (KeyRoom != null)
+            {
+                KeyRoom.HasKey = true;
+            }
+
+            return KeyRoom;
         }
 
         private static DungeonLayout GenerateOnce(DungeonLayoutSettings settings, System.Random rng)

@@ -9,7 +9,7 @@
 | 플레이어 | KayKit Medium 사용. 구체적인 모델과 동작은 테스트 후 선택. |
 | 보스 | KayKit Large 사용. 보스 등장 시점과 패턴은 미결정. |
 | 애니메이션 | 각 캐릭터는 당분간 KayKit의 해당 리그 전용 클립만 사용. |
-| 맵 | KayKit Platformer, POLY STYLE, EasyPolyMap을 검토 중. 미확정. EasyPolyMap은 지형 생성 도구이며 URP·소형 맵 대응 후 실제 플레이 검증이 남아 있다. |
+| 맵 | 맵 구조는 [던전 생성기](../Features/Level/DungeonGenerator_Guide.md)로 만든다(2026-11-16 개발자 결정, 현재 프로토타입). 형상과 장식에 쓸 팩은 KayKit Platformer, POLY STYLE을 검토 중이며 미확정. |
 | 이펙트 | Hovl Sword, Hovl Magic, PixPlays 등을 비교할 후보로 정리. 미확정. |
 
 **직접 확인할 파일:** `Assets/Game/Characters/Knight/Knight.prefab`과 `Assets/Game/Characters/BarbarianLarge/BarbarianLarge.prefab`. 씬에 배치하고 Play를 누르면 각각 동작이 순서대로 반복된다. 현재 Controller는 동작 확인용이며 게임 전투 로직이 아니다. 두 프리팹은 최종 외형을 확정한 것이 아니다.
@@ -98,28 +98,12 @@ KayKit `Knight.prefab`은 Animator의 `m_Avatar`가 `Rig_Medium_Avatar.asset`을
 - **Hades 구조 조사 및 현재 배치의 한계:** Hades 레벨 디자이너의 [설명](https://threadreaderapp.com/scrolly/1311777010239193088)에 따르면 방은 진행 및 전투에 따라 크기가 다르고, 벽·기둥은 이동과 투사체를 막는 등 역할이 있다. [엘리시움 보스전 공략](https://playerassist.com/hades-defeat-theseus-asterius/)은 테세우스·아스테리우스의 원형 경기장 중앙 부근 기둥과 외곽 회피 경로를 설명한다. 이 전투는 보스 2명 동시 전투로 본 프로젝트의 1:1 계획과 다르다. 최초 20 유닛 경기장은 근거 없는 초기값이었고 사용자가 좁다고 평가해 32유닛으로 확장했다. Hades의 실제 치수와 두 게임의 캐릭터 대비 비율은 확인되지 않았으므로 숫자로 동일성을 주장하지 않는다. 기둥은 배치 확인용이며 실제 충돌과 역할은 미확정이다. 정확한 크기·충돌·카메라 추적은 이동과 전투 테스트 후 결정한다.
 - **전투 화면 카메라 시험:** `SampleScene`의 Main Camera를 정사영 크기 12, 아래 방향 각도 40도로 조정해 두 캐릭터가 더 크게 보이도록 했다. Unity 카메라 렌더로 두 캐릭터와 중앙 공간을 확인했고, 커밋 준비 시 씬이 저장된 상태임을 확인했다. 이는 Hades를 참고한 임시 화면 구도이며 실제 Hades의 카메라 수치나 동작과 동일함을 확인하지 못했다. 플레이어 이동·추적 및 전투 플레이 검증은 하지 않았다.
 
-## EasyPolyMap 분석 — 2026-11-10
-
-- **용도:** `Assets/EasyPolyMap`은 선·점·닫힌 영역과 랜덤 시드를 이용해 로우폴리 삼각형 지형을 생성하는 도구다. `Road`, `River`, `Hill`, `Mountain`, `SandGround`, `SoilGround`, `Island`를 그릴 수 있다. 벽·건물·방 진행 기능을 갖춘 완성 맵 팩이라는 뜻은 아니다. 지형 생성은 제작 도구의 기능이며 게임에서 절차적 생성이 필수라는 뜻이 아니다.
-- **구성:** `Code`에 생성 및 내보내기 코드와 Core DLL·소스 ZIP, `Editor`에 커스텀 Inspector와 Visual Editor, `Demos`에 EmptyDemo·SpringIsland·AutumnVally 씬과 예제 데이터, `Documents`에 8쪽 사용 설명서가 있다. `3rdParty/LitJson.dll`은 데이터 직렬화에 쓰인다.
-- **기본 사용 순서:** 프로젝트 소유 테스트 씬에서 빈 GameObject에 `EPMPolyTerrainCreator`를 추가하고 이름·크기를 정한다. `Create Data`로 새 데이터 파일을 만들거나 복사한 예제 TextAsset을 지정하고 `Import Data`를 누른다. `OBJECTS SECTION > Visual Editor`에서 종류를 선택하고 `New` 후 클릭으로 점을 추가한다. Island·SandGround·SoilGround는 `CLOSE REGION`으로 닫는다. 창을 닫고 `CreateTerrain`으로 생성한 뒤 색상·높이·Twist를 조정한다. `Save Data`는 지정 파일을 덮어쓸 수 있으므로 원본 예제 데이터 대신 복사본을 사용한다.
-- **생성물:** 편집 데이터는 JSON 형식의 `.txt`; `ExportTerrain`은 `Assets/EPMTerrainOutput/<TerrainName>/`에 분할 OBJ·색상 PNG·데이터를 출력한다. 같은 이름의 OBJ 및 데이터는 기존 파일을 지우고 다시 쓸 수 있다. 별도 이름을 사용하고 파일 확인 후 조작한다. 지형 생성 시 육지 메시마다 MeshCollider를 추가하며 SeaPlane에는 추가하지 않는다. ExportTerrain은 URP 머티리얼과 메시·충돌체가 연결된 프리팹도 생성한다. 같은 이름의 기존 출력 폴더는 덮어쓰기 전 확인한다.
-- **현재 프로젝트 제약:** 생성 머티리얼이 URP에서 `Universal Render Pipeline/Lit`을 사용하도록 수정했다. 데모 캐릭터 입력은 새 Input System 대응 코드를 추가했다. 키보드·마우스 입력의 실제 플레이 검증은 아직 하지 않았다.
-- **소형 맵 주의:** `EPMDrawMapWindow.cs`의 0 배율 문제를 수정했다. 폭 50에서 Visual Editor 초기화와 생성은 확인했으며 실제 조작과 다양한 크기는 추가 검증이 필요하다. 코드상 기본 `rowSplit`, `columnSplit`은 4이고, 지형 점 수는 대략 가로×세로 면적에 비례한다. 생성 시간·폴리곤 수를 작은 테스트에서 확인한다.
-- **현재 실행 상태:** 중복 데모 스크립트 충돌은 `Assets/Fantasy Treasure Chest_Standard/Scripts/TopDownBase.FantasyChestDemo.asmdef`로 어셈블리를 분리해 해결했으며 원본 데모 코드는 수정하지 않았다. 사용자의 승인에 따라 EasyPolyMap 원본 코드와 에디터 코드를 수정했다. Unity 재컴파일은 통과했다.
-- **판단:** 로우폴리 자연 지형이나 전투 방 바깥 배경의 후보. 고정되고 평평한 전투 방에는 생성·충돌·URP 조정 비용과 단순 모듈/바닥 제작을 비교한다. 채택 여부는 미결정. Unity 에디터에서 폭 50 지형 생성, URP 렌더링, 육지 충돌체 및 OBJ·PNG·데이터·프리팹 저장과 저장된 참조를 확인했다. 실제 플레이와 빌드는 하지 않았다.
-
-**빠른 시작:** `Assets/Game/Environment/EasyPolyMap/TerrainCreator.prefab`을 씬에 놓고 Inspector에서 `Create Data` → `Visual Editor` → `CreateTerrain` → `Save Data` → `ExportTerrain` 순서로 사용한다. 기존 예제 데이터는 복사해서 사용한다.
-
-단계별 간단 사용법: [EasyPolyMap 사용법](EasyPolyMap_사용법.md).
-
 ### 지형·환경 후보 비교 — 2026-11-10
 
-**현재 추천이며 채택 확정은 아님:** 전투 방은 KayKit Platformer를 우선 시험하고 자연 환경은 POLY STYLE을 비교한다. 자연 지형의 형태가 필요해질 경우 EasyPolyMap으로 지형을 만들고 POLY STYLE 프리팹을 장식하는 조합을 시험한다. POLY STYLE의 상자 원본 15개와 상자 데모는 머티리얼 참조가 누락되어 복제본에 포함되지 않았다. 고정 전투 방, 공격 예고 가독성 및 캐릭터 시야가 우선이라는 기획을 바탕으로 한 추천이다.
+**현재 추천이며 채택 확정은 아님:** 전투 방은 KayKit Platformer를 우선 시험하고 자연 환경은 POLY STYLE을 비교한다. POLY STYLE의 상자 원본 15개와 상자 데모는 머티리얼 참조가 누락되어 복제본에 포함되지 않았다. 고정 전투 방, 공격 예고 가독성 및 캐릭터 시야가 우선이라는 기획을 바탕으로 한 추천이다.
 
 | 후보 | 확인된 사실 | 판단 및 확인할 점 |
 | --- | --- | --- |
-| EasyPolyMap | 지형 생성 도구. 이 프로젝트에서 URP 지형 생성, 육지 충돌체 및 내보낸 프리팹 참조를 에디터에서 확인했다. | 바닥과 자연 지형을 만드는 후보. 나무·건물 등 장식 팩을 대신하지는 않으며, 캐릭터의 실제 이동·빌드와 전투 가독성은 미검증. |
 | [Low-Poly Simple Nature Pack](https://assetstore.unity.com/packages/3d/environments/landscapes/low-poly-simple-nature-pack-162153) | 스토어 설명상 무료, 프리팹 24개, URP용 별도 unitypackage 제공. | 나무·식생 등 자연 장식 보강 후보. 지형 바닥까지 이 팩 하나로 충분한지는 확인되지 않았다. 기존 POLY STYLE의 장식과 겹칠 수 있다. |
 | [Low Poly Environment Starter Pack](https://assetstore.unity.com/packages/3d/environments/low-poly-environment-starter-pack-228606) | 스토어에 무료 및 Unity 2020.3 기준 URP 호환으로 표시. 검색되는 상세 설명과 개별 구성품 목록은 확인되지 않았다. | 단일 환경 팩 대안으로 비교할 가치가 있으나 바닥·벽·충돌체가 실제로 포함되는지와 구성량을 확인하기 전 단독 사용을 추천 확정할 수 없다. |
 | [Low Poly Wind](https://assetstore.unity.com/packages/vfx/shaders/low-poly-wind-182586) | 무료 셰이더 에셋. 스토어에 Unity 2022.3 기준 URP 호환으로 표시. | 식생 움직임을 위한 후순위 시각 효과 후보. 지형과 장식 모델을 만드는 도구는 아니며, 다른 팩의 모델과 실제 호환성은 미검증이다. |

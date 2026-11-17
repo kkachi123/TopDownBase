@@ -11,7 +11,7 @@ namespace TopDownBase.Dungeon.Prototype
     public class DungeonPrototypeCamera : MonoBehaviour
     {
         public Transform Target;
-        public DungeonGenerator Generator;
+        public DungeonMapSource Generator;
         [Range(20f, 90f)] public float Pitch = 40f;
         [Min(1f)] public float FollowOrthographicSize = 12f;
         [Min(1f)] public float Distance = 80f;

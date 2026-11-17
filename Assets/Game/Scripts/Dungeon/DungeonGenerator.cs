@@ -14,7 +14,7 @@ namespace TopDownBase.Dungeon
     /// Play 중에는 물론 에디터(편집 모드)에서도 생성할 수 있고, 생성물은 씬에 저장할 수 있다.
     /// </summary>
     [DisallowMultipleComponent]
-    public class DungeonGenerator : MonoBehaviour
+    public class DungeonGenerator : DungeonMapSource
     {
         private const string GeneratedRootName = "Generated";
         private const float FloorThickness = 0.2f;
@@ -140,7 +140,7 @@ namespace TopDownBase.Dungeon
         public string LastReport { get; private set; }
 
         /// <summary>플레이어를 놓을 위치(시작 방 중앙).</summary>
-        public Vector3 StartPosition => StartRoom != null ? StartRoom.transform.position : transform.position;
+        public override Vector3 StartPosition => StartRoom != null ? StartRoom.transform.position : transform.position;
 
         /// <summary>방 중심 사이의 간격. 방 안쪽 크기에 벽 두께를 더한 값이다.</summary>
         private Vector2 CellPitch => InteriorSize + Vector2.one * WallThickness;
@@ -174,7 +174,7 @@ namespace TopDownBase.Dungeon
             Generate();
         }
 
-        public void GenerateWithRandomSeed()
+        public override void GenerateWithRandomSeed()
         {
             Seed = System.Environment.TickCount;
             Generate();
@@ -315,7 +315,7 @@ namespace TopDownBase.Dungeon
         }
 
         /// <summary>던전 전체를 감싸는 월드 영역. 전체 보기 카메라에 쓴다.</summary>
-        public Bounds GetWorldBounds()
+        public override Bounds GetWorldBounds()
         {
             var bounds = new Bounds(transform.position, Vector3.zero);
             bool first = true;

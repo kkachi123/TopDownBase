@@ -82,7 +82,7 @@ KayKit `Knight.prefab`은 Animator의 `m_Avatar`가 `Rig_Medium_Avatar.asset`을
 
 | 팩 | 실제 구성 | 활용 가능성·제약 |
 | --- | --- | --- |
-| KayKit Platformer | `Prefabs/neutral`에 `floor_wood_1x1`, `floor_wood_2x2`, `floor_wood_2x6`, `floor_wood_4x4`, 여러 크기의 `barrier`, `pillar`, `structure`, `floor_spikes` 등이 있고 blue/green/neutral/red/yellow 폴더가 있다. URP 변환 unitypackage도 별도 존재한다. | 반복 배치로 고정 방 3개를 빠르게 시험할 후보. 목재·플랫폼 중심의 외형이 원하는 판타지 전투 방에 맞는지는 화면 확인 필요. 함정 프리팹이 있다는 이유로 함정 기능을 추가하지 않는다. |
+| KayKit Platformer | `Prefabs/neutral`에 `floor_wood_1x1`, `floor_wood_2x2`, `floor_wood_2x6`, `floor_wood_4x4`, 여러 크기의 `barrier`, `pillar`, `structure`, `floor_spikes` 등이 있고 blue/green/neutral/red/yellow 폴더가 있다. URP 변환 unitypackage도 별도 존재한다. | 격자 모듈이라 던전 생성기의 방 형상으로 시험할 후보. 목재·플랫폼 중심의 외형이 원하는 판타지 전투 방에 맞는지는 화면 확인 필요. 함정 프리팹이 있다는 이유로 함정 기능을 추가하지 않는다. |
 | POLY STYLE Platformer Starter Pack | `Platformer Starter Pack_URP/Prefabs`에 `Ground_A`~계열, `Hill`, `Stone`, `Tree`, `Buildings`, `Bridge`, `Props`, `Treasure_Chest` 등과 데모·재질·설정이 풀려 있다. 별도 Standard unitypackage도 있다. | 지형 및 배경 장식 후보. Ground 이름만으로 평평한 타일이나 충돌체 구성을 확정할 수 없다. 높이 변화·장식이 탑다운 시야와 공격 예고를 가리지 않는지 검토한다. |
 | POLY STYLE Fantasy Treasure Chest / Vegetation Pack 2 | 각각 README와 Standard unitypackage만 풀린 폴더에서 확인. | 패키지 내부 구성, URP 호환은 미확인. Starter Pack에도 상자·식생 후보가 있으므로 우선 비교하고 추가 임포트 필요성을 판단한다. |
 
@@ -90,7 +90,7 @@ KayKit `Knight.prefab`은 Animator의 `m_Avatar`가 `Rig_Medium_Avatar.asset`을
 
 ### KayKit Platformer와 POLY STYLE 비교 — 2026-11-10
 
-- **KayKit Platformer:** 실제 파일에 여러 규격의 `floor_wood`, `barrier`, `pillar`, `structure` 및 함정 모양 프리팹과 색상별 폴더가 있다. 모듈 이름과 구성을 근거로 고정 전투 방의 빠른 블록아웃에 우선 추천한다. 함정 이름은 기능 구현을 뜻하지 않는다. 목재와 플랫폼 중심의 분위기가 게임에 맞는지, 캐릭터 크기·충돌 및 URP 머티리얼이 정상인지 실제 씬에서 확인해야 한다. 같은 KayKit 계열이므로 스타일 비교의 유력 후보이나 실제 조화가 보장되는 것은 아니다.
+- **KayKit Platformer:** 실제 파일에 여러 규격의 `floor_wood`, `barrier`, `pillar`, `structure` 및 함정 모양 프리팹과 색상별 폴더가 있다. 모듈 이름과 구성을 근거로 전투 방의 빠른 블록아웃에 우선 추천한다. 함정 이름은 기능 구현을 뜻하지 않는다. 목재와 플랫폼 중심의 분위기가 게임에 맞는지, 캐릭터 크기·충돌 및 URP 머티리얼이 정상인지 실제 씬에서 확인해야 한다. 같은 KayKit 계열이므로 스타일 비교의 유력 후보이나 실제 조화가 보장되는 것은 아니다.
 - **POLY STYLE Platformer Starter Pack:** 프로젝트 복제본에서 Ground·Hill·Stone·Tree·Grass·Buildings·Bridge 등 프리팹을 확인했다. 자연 지형과 주변 장식을 구성할 때 후보가 폭넓다. Ground가 평탄한 전투 바닥이나 격자형 모듈인지 이름만으로 확정할 수 없다. 복제본 87개의 메시·재질 연결과 데모 지형 렌더링은 확인했으나 화면 품질·충돌·캐릭터와의 조화는 추가 확인이 필요하다. 상자 원본 15개 및 상자 Demo는 머티리얼 누락으로 복제본 대상에서 빠져 있다.
 - **추천:** 전투 방 단독 팩을 우선한다면 KayKit Platformer부터 시험하고, 자연 배경이나 장식이 필요하면 POLY STYLE을 함께 비교한다. 이는 기존에 POLY STYLE 단독을 먼저 시험하자고 한 환경 중심 추천을, KayKit 모듈 구성까지 직접 비교한 뒤 조정한 것이다. 최종 선택은 미정이며 두 팩을 실제 게임 카메라·조명 아래 비교하지 않았다.
 - **씬 비교 예시:** `Assets/Scenes/SampleScene.unity`의 `Environment Comparison` 아래 KayKit 목재 바닥·장벽과 POLY STYLE 지형·식생을 나란히 배치하고 각각 Knight를 두었다. 비교용으로 Main Camera를 조정했다. Unity 카메라 렌더링 및 배치물 메시·머티리얼 참조는 확인했으나, 전투용 충돌체 구성과 이동·전투 플레이는 검증하지 않았다. 원본 에셋은 변경하지 않았다.
@@ -100,7 +100,7 @@ KayKit `Knight.prefab`은 Animator의 `m_Avatar`가 `Rig_Medium_Avatar.asset`을
 
 ### 지형·환경 후보 비교 — 2026-11-10
 
-**현재 추천이며 채택 확정은 아님:** 전투 방은 KayKit Platformer를 우선 시험하고 자연 환경은 POLY STYLE을 비교한다. POLY STYLE의 상자 원본 15개와 상자 데모는 머티리얼 참조가 누락되어 복제본에 포함되지 않았다. 고정 전투 방, 공격 예고 가독성 및 캐릭터 시야가 우선이라는 기획을 바탕으로 한 추천이다.
+**현재 추천이며 채택 확정은 아님:** 전투 방은 KayKit Platformer를 우선 시험하고 자연 환경은 POLY STYLE을 비교한다. POLY STYLE의 상자 원본 15개와 상자 데모는 머티리얼 참조가 누락되어 복제본에 포함되지 않았다. 공격 예고 가독성 및 캐릭터 시야가 우선이라는 기획을 바탕으로 한 추천이다.
 
 | 후보 | 확인된 사실 | 판단 및 확인할 점 |
 | --- | --- | --- |

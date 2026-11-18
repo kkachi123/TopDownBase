@@ -2,6 +2,8 @@ using TopDownBase.Dungeon.Editor;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 using UnityEngine.SceneManagement;
 
 namespace TopDownBase.Dungeon.Experiments.Editor
@@ -17,6 +19,7 @@ namespace TopDownBase.Dungeon.Experiments.Editor
         public const string NatureScenePath = SceneFolder + "/NatureLayoutTest.unity";
 
         private const string PropFolder = "Assets/Game/Environment/PolyStyle/Prefabs/Environments/";
+        private const string NatureVolumeProfilePath = "Assets/Game/Environment/PolyStyle/Settings/NatureVolumeProfile.asset";
 
         [MenuItem("TopDownBase/Layout Tests/Create Or Open Terrain Boundary Scene")]
         public static void OpenTerrainSceneFromMenu()
@@ -70,12 +73,28 @@ namespace TopDownBase.Dungeon.Experiments.Editor
             builder.BoundaryWidth = 5f;
             builder.PathWidth = 5f;
             builder.PathBend = 2f;
-            builder.ObstaclePrefabs = LoadProps("Stone_1", "Stone_2", "Stone_3");
-            builder.LowProps = LoadProps("Stone_1", "Stone_2", "Stone_3", "Grass_1", "Grass_5", "Grass_10");
+            // Rock_*: Vegetation Pack 2의 바위에 URP 머티리얼을 입히고 0.7배로 줄인 변형.
+            // 원래 크기로는 바닥 가림이 17%까지 올라간다. Stone_*(Starter Pack)은 청록색 덩어리 모양이다.
+            builder.ObstaclePrefabs = LoadProps("Rock_1", "Rock_2", "Rock_3");
+            builder.ObstaclePrefabDiameter = 1.5f;
+            builder.LowProps = LoadProps("Rock_1", "Rock_2", "Rock_3", "Grass_1", "Grass_5", "Grass_10");
             builder.TallProps = LoadProps("Tree_1", "Tree_2", "Tree_3");
 
-            DungeonPrototypeSceneBuilder.CreateRig(builder);
+            Camera camera = DungeonPrototypeSceneBuilder.CreateRig(builder);
+            AddPostProcessing(camera);
             SaveNewScene(scene, NatureScenePath);
+        }
+
+        /// <summary>
+        /// POLY STYLE 데모의 후처리(대비·채도·화이트밸런스·블룸 등)를 사본 프로필로 건다.
+        /// 이 에셋들은 후처리를 전제로 색을 잡아서, 없으면 칙칙하게 보인다.
+        /// </summary>
+        public static void AddPostProcessing(Camera camera)
+        {
+            var volume = new GameObject("Global Volume").AddComponent<Volume>();
+            volume.isGlobal = true;
+            volume.sharedProfile = AssetDatabase.LoadAssetAtPath<VolumeProfile>(NatureVolumeProfilePath);
+            camera.GetUniversalAdditionalCameraData().renderPostProcessing = true;
         }
 
         private static bool TryOpenExisting(string scenePath)

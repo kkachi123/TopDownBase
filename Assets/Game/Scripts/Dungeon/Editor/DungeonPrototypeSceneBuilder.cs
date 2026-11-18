@@ -44,9 +44,9 @@ namespace TopDownBase.Dungeon.Editor
 
         /// <summary>
         /// 확인용 씬의 공통 구성: 조명, Player 태그가 붙은 임시 이동체, 따라가는 카메라.
-        /// 이동체와 카메라를 주어진 맵 생성 컴포넌트에 연결한다.
+        /// 이동체와 카메라를 주어진 맵 생성 컴포넌트에 연결하고, 만든 카메라를 돌려준다.
         /// </summary>
-        public static void CreateRig(DungeonMapSource source)
+        public static Camera CreateRig(DungeonMapSource source)
         {
             var lightObject = new GameObject("Directional Light");
             var light = lightObject.AddComponent<Light>();
@@ -78,6 +78,7 @@ namespace TopDownBase.Dungeon.Editor
             var prototypeCamera = cameraObject.AddComponent<DungeonPrototypeCamera>();
             prototypeCamera.Target = walkerObject.transform;
             prototypeCamera.Generator = source;
+            return camera;
         }
     }
 }

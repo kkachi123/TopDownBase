@@ -57,6 +57,16 @@ namespace TopDownBase.Dungeon.Experiments
         [Tooltip("ObstaclePrefabs의 대략적인 바닥 지름(유닛). 장애물 반지름에 맞춰 크기를 정하는 데 쓴다.")]
         [Min(0.1f)] public float ObstaclePrefabDiameter = 2f;
 
+        [Header("Gates")]
+        [Tooltip("길이 공터와 만나는 곳마다 잠금 오브젝트를 둔다. 처음에는 열려(꺼져) 있고, 방 단위로 잠근다.")]
+        public bool BuildGates = true;
+        [Tooltip("잠금 충돌체의 높이(유닛). 이동체가 넘지 못할 만큼 높아야 한다.")]
+        [Min(0.5f)] public float GateHeight = 3f;
+        [Tooltip("잠금 표시의 높이와 두께(유닛). 충돌체와 별개로 보이기만 한다.")]
+        [Min(0.1f)] public float GateVisualHeight = 1.2f;
+        [Min(0.1f)] public float GateVisualThickness = 0.6f;
+        public Color GateColor = new Color(0.75f, 0.25f, 0.2f);
+
         [Header("NavMesh")]
         public bool BuildNavMesh = true;
 
@@ -77,6 +87,9 @@ namespace TopDownBase.Dungeon.Experiments
         private readonly List<Collider> _obstacleColliders = new List<Collider>();
         private Transform _generatedRoot;
         private NavMeshSurface _navMeshSurface;
+        // 방 번호마다 그 방의 입구에 놓인 잠금 오브젝트와 잠금 상태.
+        private List<GameObject>[] _gatesByRoom;
+        private bool[] _roomLocked;
 
         public DungeonLayout Layout { get; private set; }
         public WalkableMap Map { get; private set; }
@@ -179,6 +192,8 @@ namespace TopDownBase.Dungeon.Experiments
             BuildBoundary(_generatedRoot, new System.Random(Seed ^ 0x454E56));
             BuildObstacles(_generatedRoot, new System.Random(Seed ^ 0x4F4253));
             BuildMarkers(_generatedRoot);
+            // 잠금 오브젝트는 꺼진 채로 만들어 NavMesh에는 열린 상태가 구워진다.
+            BuildGateObjects(_generatedRoot);
 
             string navMeshReport = BuildNavMesh ? BakeAndCheckNavMesh() : "skipped";
 
@@ -188,6 +203,7 @@ namespace TopDownBase.Dungeon.Experiments
 
             LastReport = $"seed {Seed}: rooms {Layout.Rooms.Count}, shape {Shape}, map {Map.Width}x{Map.Height}, " +
                          $"walkable {Map.WalkableRatio * 100f:0.0}%, obstacles {Map.Obstacles.Count}, " +
+                         $"entrances {Map.Entrances.Count}, " +
                          $"connected {Map.IsFullyConnected(true, AgentRadius)}, navmesh {navMeshReport}, " +
                          $"objects {GeneratedObjectCount}, {LastGenerateMilliseconds:0} ms";
             Debug.Log($"[LayoutTest] {name}: {LastReport}", this);
@@ -199,6 +215,8 @@ namespace TopDownBase.Dungeon.Experiments
             Map = null;
             LastReport = null;
             _obstacleColliders.Clear();
+            _gatesByRoom = null;
+            _roomLocked = null;
 
             if (_navMeshSurface != null)
             {
@@ -234,6 +252,63 @@ namespace TopDownBase.Dungeon.Experiments
 
             Vector2 center = Map.Origin + new Vector2(Map.Width, Map.Height) * 0.5f;
             return new Bounds(ToWorld(center), new Vector3(Map.Width, 4f, Map.Height));
+        }
+
+        // ---------- 방 잠금 ----------
+
+        /// <summary>월드 위치가 들어 있는 방의 번호. 길이나 경계 위면 -1.</summary>
+        public int RoomIndexAt(Vector3 worldPosition)
+        {
+            if (Map == null)
+            {
+                return -1;
+            }
+
+            Vector3 local = transform.InverseTransformPoint(worldPosition);
+            return Map.TryGetCell(new Vector2(local.x, local.z), out int x, out int y) ? Mathf.Max(Map.Owner[x, y], -1) : -1;
+        }
+
+        public bool IsRoomLocked(int roomIndex)
+        {
+            return _roomLocked != null && roomIndex >= 0 && roomIndex < _roomLocked.Length && _roomLocked[roomIndex];
+        }
+
+        /// <summary>그 방의 모든 입구를 막거나 연다. 잠기면 방 안에서 길로 나갈 수 없다.</summary>
+        public void SetRoomLocked(int roomIndex, bool locked)
+        {
+            if (_gatesByRoom == null || roomIndex < 0 || roomIndex >= _gatesByRoom.Length)
+            {
+                return;
+            }
+
+            _roomLocked[roomIndex] = locked;
+            foreach (GameObject gate in _gatesByRoom[roomIndex])
+            {
+                if (gate != null)
+                {
+                    gate.SetActive(locked);
+                }
+            }
+        }
+
+        /// <summary>방에 놓인 잠금 오브젝트. 검사용이다.</summary>
+        public IReadOnlyList<GameObject> GetRoomGates(int roomIndex)
+        {
+            return _gatesByRoom != null && roomIndex >= 0 && roomIndex < _gatesByRoom.Length
+                ? _gatesByRoom[roomIndex]
+                : (IReadOnlyList<GameObject>)System.Array.Empty<GameObject>();
+        }
+
+        public override bool ToggleRoomLockAt(Vector3 worldPosition)
+        {
+            int roomIndex = RoomIndexAt(worldPosition);
+            if (roomIndex < 0 || _gatesByRoom == null)
+            {
+                return false;
+            }
+
+            SetRoomLocked(roomIndex, !IsRoomLocked(roomIndex));
+            return true;
         }
 
         /// <summary>
@@ -317,6 +392,13 @@ namespace TopDownBase.Dungeon.Experiments
                         visual.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
                         visual.transform.localScale = prefab.transform.localScale
                                                       * (obstacle.Radius * 2f / ObstaclePrefabDiameter);
+                        // 프리팹에 달린 충돌체(MeshCollider 등)는 뗀다. 충돌은 위의 기둥이 맡고,
+                        // 남겨 두면 NavMesh가 읽기 권한 없는 메시를 소스로 모으려 한다.
+                        foreach (Collider collider in visual.GetComponentsInChildren<Collider>(true))
+                        {
+                            DestroyImmediate(collider);
+                        }
+
                         continue;
                     }
                 }
@@ -360,6 +442,55 @@ namespace TopDownBase.Dungeon.Experiments
                 float diameter = room.Data.Role == DungeonRoomRole.BossGate ? 3f : 1.6f;
                 CreatePrimitive(PrimitiveType.Cylinder, markerName, markers, position,
                     new Vector3(diameter, 0.02f, diameter), color, false);
+            }
+        }
+
+        /// <summary>
+        /// 입구마다 잠금 오브젝트를 만든다. 충돌 상자는 입구 칸을 모두 덮어 방을 완전히 막고,
+        /// NavMeshObstacle은 잠긴 동안 NavMesh에서도 길을 끊는다. 보이는 것은 입구 가운데의 낮은 벽이다.
+        /// </summary>
+        private void BuildGateObjects(Transform root)
+        {
+            _gatesByRoom = new List<GameObject>[Map.Rooms.Count];
+            _roomLocked = new bool[Map.Rooms.Count];
+            for (int i = 0; i < _gatesByRoom.Length; i++)
+            {
+                _gatesByRoom[i] = new List<GameObject>();
+            }
+
+            if (!BuildGates)
+            {
+                return;
+            }
+
+            Transform gates = new GameObject("Gates").transform;
+            gates.SetParent(root, false);
+
+            foreach (WalkableEntrance entrance in Map.Entrances)
+            {
+                var gate = new GameObject($"Gate_Room{entrance.RoomIndex}_{_gatesByRoom[entrance.RoomIndex].Count}");
+                gate.transform.SetParent(gates, false);
+                gate.transform.localPosition = ToLocal(entrance.Center);
+                // 로컬 z가 길 방향(Length), x가 길을 가로지르는 방향(Width)이다.
+                gate.transform.localRotation = Quaternion.LookRotation(new Vector3(entrance.Direction.x, 0f, entrance.Direction.y));
+
+                var size = new Vector3(entrance.Width, GateHeight, entrance.Length);
+                var box = gate.AddComponent<BoxCollider>();
+                box.size = size;
+                box.center = new Vector3(0f, GateHeight * 0.5f, 0f);
+
+                var obstacle = gate.AddComponent<NavMeshObstacle>();
+                obstacle.shape = NavMeshObstacleShape.Box;
+                obstacle.size = size;
+                obstacle.center = box.center;
+                obstacle.carving = true;
+
+                CreatePrimitive(PrimitiveType.Cube, "Visual", gate.transform,
+                    new Vector3(0f, GateVisualHeight * 0.5f, 0f),
+                    new Vector3(entrance.Width, GateVisualHeight, GateVisualThickness), GateColor, false);
+
+                gate.SetActive(false);
+                _gatesByRoom[entrance.RoomIndex].Add(gate);
             }
         }
 

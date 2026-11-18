@@ -7,7 +7,7 @@ namespace TopDownBase.Dungeon.Prototype
     /// 생성된 던전을 걸어 다니며 방 크기와 구조를 확인하기 위한 임시 이동체.
     /// 게임의 플레이어 캐릭터가 아니며 TopDown Engine과 연결되어 있지 않다.
     /// 포털과 열쇠가 반응하려면 이 오브젝트의 태그가 Player여야 한다.
-    /// WASD: 이동, R: 새 시드로 다시 생성, L: 현재 방의 문 잠금 전환(던전 생성기에서만).
+    /// WASD: 이동, R: 새 시드로 다시 생성, L: 현재 방의 출입구 잠금 전환.
     /// </summary>
     [RequireComponent(typeof(CharacterController))]
     public class DungeonPrototypeWalker : MonoBehaviour
@@ -43,9 +43,9 @@ namespace TopDownBase.Dungeon.Prototype
                 return;
             }
 
-            if (keyboard.lKey.wasPressedThisFrame)
+            if (keyboard.lKey.wasPressedThisFrame && Generator != null)
             {
-                ToggleCurrentRoomLock();
+                Generator.ToggleRoomLockAt(transform.position);
             }
 
             var input = new Vector3(
@@ -72,27 +72,6 @@ namespace TopDownBase.Dungeon.Prototype
             transform.position = Generator.StartPosition + Vector3.up * 0.1f;
             _controller.enabled = true;
             _verticalSpeed = 0f;
-        }
-
-        private void ToggleCurrentRoomLock()
-        {
-            // 문 차단물은 던전 생성기가 만든 방에만 있다.
-            if (!(Generator is DungeonGenerator dungeon))
-            {
-                return;
-            }
-
-            foreach (DungeonRoom room in dungeon.Rooms)
-            {
-                Vector3 offset = transform.position - room.transform.position;
-                bool inside = Mathf.Abs(offset.x) <= room.InteriorSize.x * 0.5f
-                              && Mathf.Abs(offset.z) <= room.InteriorSize.y * 0.5f;
-                if (inside)
-                {
-                    room.SetDoorsLocked(!room.DoorsLocked);
-                    return;
-                }
-            }
         }
     }
 }

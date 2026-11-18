@@ -406,6 +406,11 @@ MonoBehaviour:
   - {fileID: 6720792039176187589, guid: dd09de156ccf3c84cbb8a056096119b3, type: 3}
   - {fileID: 1444447578966994568, guid: a8cb6106880654d459cdbda67e104157, type: 3}
   ObstaclePrefabDiameter: 1.5
+  BuildGates: 1
+  GateHeight: 3
+  GateVisualHeight: 1.2
+  GateVisualThickness: 0.6
+  GateColor: {r: 0.75, g: 0.25, b: 0.2, a: 1}
   BuildNavMesh: 1
   BaseMaterial: {fileID: 0}
   ObstacleColor: {r: 0.5, g: 0.5, b: 0.52, a: 1}
@@ -440,6 +445,7 @@ MonoBehaviour:
   - {fileID: 4578069759007183627, guid: 1f3778ea4300342498a8c4065040269e, type: 3}
   EdgeDepth: 2
   EdgeDensity: 0.55
+  RimDensity: 0.85
   FillDensity: 0.07
   LowPropScale: {x: 0.7, y: 1.2}
   TallPropScale: {x: 1.2, y: 2.2}

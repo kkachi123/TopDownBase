@@ -54,6 +54,8 @@ namespace TopDownBase.Dungeon.Experiments
         [Tooltip("걸을 수 있는 영역에서 이 거리(유닛) 안쪽의 막힌 칸을 가장자리로 본다.")]
         [Min(1f)] public float EdgeDepth = 2f;
         [Range(0f, 1f)] public float EdgeDensity = 0.55f;
+        [Tooltip("걸을 수 있는 곳과 바로 맞닿은 첫 줄(대각선 포함)의 소품 밀도. 높이면 공터와 길의 테두리가 끊기지 않아 경계가 화면에서 읽힌다.")]
+        [Range(0f, 1f)] public float RimDensity = 0.85f;
         [Range(0f, 1f)] public float FillDensity = 0.07f;
         [Tooltip("가장자리 소품의 크기 배율. 크게 하면 소품이 걸을 수 있는 영역 위로 넘어와 바닥을 가린다.")]
         public Vector2 LowPropScale = new Vector2(0.7f, 1.2f);
@@ -488,7 +490,10 @@ namespace TopDownBase.Dungeon.Experiments
                     }
 
                     bool edge = Map.DistanceToWalkable[x, y] <= EdgeDepth;
-                    if (rng.NextDouble() >= (edge ? EdgeDensity : FillDensity))
+                    // 첫 줄은 대각선 거리(1.41)까지다.
+                    bool rim = Map.DistanceToWalkable[x, y] <= 1.5f;
+                    float density = rim ? Mathf.Max(EdgeDensity, RimDensity) : edge ? EdgeDensity : FillDensity;
+                    if (rng.NextDouble() >= density)
                     {
                         continue;
                     }

@@ -56,6 +56,24 @@ namespace TopDownBase.Dungeon.Experiments
     }
 
     /// <summary>
+    /// 길이 방(공터)에 닿는 곳 하나. 방에 붙은 길 칸들을 이어진 덩어리로 묶은 것이다.
+    /// 이 칸들을 모두 막으면 그 방에서 길로 나갈 수 없다.
+    /// 상자(Center, Direction, Length, Width)는 그 칸들을 빠짐없이 덮는 회전된 직사각형이다.
+    /// </summary>
+    public class WalkableEntrance
+    {
+        public int RoomIndex;
+        public readonly List<Vector2Int> Cells = new List<Vector2Int>();
+        public Vector2 Center;
+        /// <summary>방에서 길 쪽으로 나가는 방향(단위 벡터).</summary>
+        public Vector2 Direction;
+        /// <summary>Direction 방향의 상자 길이(유닛).</summary>
+        public float Length;
+        /// <summary>Direction에 수직인 방향의 상자 폭(유닛).</summary>
+        public float Width;
+    }
+
+    /// <summary>
     /// 방 그래프(DungeonLayout)에서 만든 "걸을 수 있는 영역" 지도. 한 칸이 1유닛이다.
     /// 경계를 무엇으로 표현할지(지형 높낮이, 소품)는 이 지도를 읽는 쪽이 정한다.
     /// 좌표는 맵을 만드는 오브젝트 기준의 (x, z) 평면이다.
@@ -83,6 +101,7 @@ namespace TopDownBase.Dungeon.Experiments
 
         public readonly List<WalkableRoom> Rooms = new List<WalkableRoom>();
         public readonly List<WalkableObstacle> Obstacles = new List<WalkableObstacle>();
+        public readonly List<WalkableEntrance> Entrances = new List<WalkableEntrance>();
         public WalkableRoom StartRoom { get; private set; }
         public WalkableRoom BossRoom { get; private set; }
         public int WalkableCellCount { get; private set; }
@@ -167,6 +186,7 @@ namespace TopDownBase.Dungeon.Experiments
             }
 
             map.CountCells();
+            map.FindEntrances();
             map.ComputeDistances();
             map.PlaceObstacles(settings, rng);
             return map;
@@ -393,6 +413,150 @@ namespace TopDownBase.Dungeon.Experiments
             }
         }
 
+        // ---------- 입구 ----------
+
+        /// <summary>
+        /// 방 칸과 맞닿은(대각선 포함) 길 칸을 방마다 모으고, 서로 이어진 것끼리 입구 하나로 묶는다.
+        /// 길 칸은 방 바깥에만 파이므로, 방에서 길로 가려면 반드시 이 칸들 중 하나를 지난다.
+        /// </summary>
+        private void FindEntrances()
+        {
+            var cellsByRoom = new Dictionary<int, HashSet<Vector2Int>>();
+            for (int x = 0; x < Width; x++)
+            {
+                for (int y = 0; y < Height; y++)
+                {
+                    if (Owner[x, y] != Path)
+                    {
+                        continue;
+                    }
+
+                    for (int dx = -1; dx <= 1; dx++)
+                    {
+                        for (int dy = -1; dy <= 1; dy++)
+                        {
+                            int nx = x + dx;
+                            int ny = y + dy;
+                            if (nx < 0 || ny < 0 || nx >= Width || ny >= Height || Owner[nx, ny] < 0)
+                            {
+                                continue;
+                            }
+
+                            if (!cellsByRoom.TryGetValue(Owner[nx, ny], out HashSet<Vector2Int> cells))
+                            {
+                                cells = new HashSet<Vector2Int>();
+                                cellsByRoom.Add(Owner[nx, ny], cells);
+                            }
+
+                            cells.Add(new Vector2Int(x, y));
+                        }
+                    }
+                }
+            }
+
+            // 방 번호 순으로 만들어 같은 시드에서 항상 같은 순서가 되게 한다.
+            for (int roomIndex = 0; roomIndex < Rooms.Count; roomIndex++)
+            {
+                if (!cellsByRoom.TryGetValue(roomIndex, out HashSet<Vector2Int> remaining))
+                {
+                    continue;
+                }
+
+                var sorted = new List<Vector2Int>(remaining);
+                sorted.Sort((a, b) => a.x != b.x ? a.x.CompareTo(b.x) : a.y.CompareTo(b.y));
+                foreach (Vector2Int seed in sorted)
+                {
+                    if (!remaining.Remove(seed))
+                    {
+                        continue;
+                    }
+
+                    var entrance = new WalkableEntrance { RoomIndex = roomIndex };
+                    var queue = new Queue<Vector2Int>();
+                    queue.Enqueue(seed);
+                    while (queue.Count > 0)
+                    {
+                        Vector2Int cell = queue.Dequeue();
+                        entrance.Cells.Add(cell);
+                        for (int dx = -1; dx <= 1; dx++)
+                        {
+                            for (int dy = -1; dy <= 1; dy++)
+                            {
+                                var next = new Vector2Int(cell.x + dx, cell.y + dy);
+                                if (remaining.Remove(next))
+                                {
+                                    queue.Enqueue(next);
+                                }
+                            }
+                        }
+                    }
+
+                    FitEntranceBox(entrance);
+                    Entrances.Add(entrance);
+                }
+            }
+        }
+
+        /// <summary>입구 칸들을 빠짐없이 덮는, 길 방향으로 회전된 직사각형을 구한다.</summary>
+        private void FitEntranceBox(WalkableEntrance entrance)
+        {
+            Vector2 sum = Vector2.zero;
+            foreach (Vector2Int cell in entrance.Cells)
+            {
+                sum += CellCenter(cell.x, cell.y);
+            }
+
+            Vector2 mean = sum / entrance.Cells.Count;
+            // 길은 방 중심에서 뻗어 나가므로, 방 중심에서 입구를 향하는 방향이 곧 길의 방향이다.
+            Vector2 direction = mean - Rooms[entrance.RoomIndex].Center;
+            direction = direction.sqrMagnitude > 0.0001f ? direction.normalized : Vector2.up;
+            var side = new Vector2(-direction.y, direction.x);
+
+            float alongMin = float.MaxValue;
+            float alongMax = float.MinValue;
+            float sideMin = float.MaxValue;
+            float sideMax = float.MinValue;
+            foreach (Vector2Int cell in entrance.Cells)
+            {
+                Vector2 offset = CellCenter(cell.x, cell.y) - mean;
+                float along = Vector2.Dot(offset, direction);
+                float across = Vector2.Dot(offset, side);
+                alongMin = Mathf.Min(alongMin, along);
+                alongMax = Mathf.Max(alongMax, along);
+                sideMin = Mathf.Min(sideMin, across);
+                sideMax = Mathf.Max(sideMax, across);
+            }
+
+            // 회전된 칸(한 변 1)의 꼭짓점까지 덮으려면 중심에서 0.71씩 더 넓혀야 한다.
+            const float cellReach = 0.71f;
+            entrance.Direction = direction;
+            entrance.Center = mean + direction * ((alongMin + alongMax) * 0.5f) + side * ((sideMin + sideMax) * 0.5f);
+            entrance.Length = alongMax - alongMin + cellReach * 2f;
+            entrance.Width = sideMax - sideMin + cellReach * 2f;
+        }
+
+        private bool IsNearEntrance(Vector2 position, float margin)
+        {
+            foreach (WalkableEntrance entrance in Entrances)
+            {
+                if (IsInsideEntranceBox(entrance, position, margin))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>점이 입구 상자 안에 있는지. 여유(margin)만큼 상자를 키워 본다.</summary>
+        public static bool IsInsideEntranceBox(WalkableEntrance entrance, Vector2 position, float margin = 0f)
+        {
+            Vector2 offset = position - entrance.Center;
+            var side = new Vector2(-entrance.Direction.y, entrance.Direction.x);
+            return Mathf.Abs(Vector2.Dot(offset, entrance.Direction)) <= entrance.Length * 0.5f + margin
+                   && Mathf.Abs(Vector2.Dot(offset, side)) <= entrance.Width * 0.5f + margin;
+        }
+
         // ---------- 거리 ----------
 
         private void ComputeDistances()
@@ -472,6 +636,12 @@ namespace TopDownBase.Dungeon.Experiments
                     // 방 중심은 비워 둔다. 길이 중심을 향해 들어오고 표식도 중심에 놓인다.
                     float centerKeepOut = radiusMax + 2f;
                     if ((CellCenter(x, y) - Rooms[owner].Center).sqrMagnitude < centerKeepOut * centerKeepOut)
+                    {
+                        continue;
+                    }
+
+                    // 입구 앞은 비워 둔다. 잠금 오브젝트와 겹치거나 드나드는 길목을 막지 않게 한다.
+                    if (IsNearEntrance(CellCenter(x, y), radiusMax + 1f))
                     {
                         continue;
                     }

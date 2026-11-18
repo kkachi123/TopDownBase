@@ -12,7 +12,7 @@
 | --- | --- | --- | --- |
 | 던전 생성기 (현재 프로토타입) | 방 생성·에디터 생성은 개발자 확인 완료. 보스 포털과 열쇠, 주변 환경 배치는 AI 검증 완료, 개발자 확인 필요 | 포털·열쇠·환경 직접 확인 | [과정](DungeonGenerationPrototype/Process.md) · [구조와 사용법](DungeonGenerator_Guide.md) |
 | 보스 투기장 (보스 씬) | 확인 필요. 현재 포털은 `SampleScene`을 불러온다. 규격은 미확정 | 착수 시 문서 연결 | — |
-| 자연환경 맵 (공터 + 길 + 자연물 경계) | 진행 중. 1단계 기술 검증은 AI 검증 완료, 개발자 확인 필요 | 2단계 경계와 문 | [계획](NatureEnvironment/Plan.md) · [과정](NatureEnvironment/Process.md) |
+| 자연환경 맵 (공터 + 길 + 자연물 경계) | 진행 중. 1단계 기술 검증, 2단계 경계와 문은 AI 검증 완료, 개발자 확인 필요 | 벽 방식 대체 여부 결정 후 3단계 통합 | [계획](NatureEnvironment/Plan.md) · [과정](NatureEnvironment/Process.md) |
 
 던전 생성 프로토타입은 플레이어 조작·적 구현에 의존하지 않고 단독으로 실행된다. 방 잠금과 적 스폰 연동은 해당 기능이 만들어진 뒤에 가능하다.
 

@@ -15,5 +15,14 @@ namespace TopDownBase.Dungeon
 
         /// <summary>맵 전체를 감싸는 월드 영역. 전체 보기 카메라에 쓴다.</summary>
         public abstract Bounds GetWorldBounds();
+
+        /// <summary>
+        /// 이 위치가 들어 있는 방의 출입구 잠금을 전환한다. 방 안이 아니거나 잠금이 없는 맵이면 false.
+        /// 확인용 이동체의 L 키가 쓴다.
+        /// </summary>
+        public virtual bool ToggleRoomLockAt(Vector3 worldPosition)
+        {
+            return false;
+        }
     }
 }

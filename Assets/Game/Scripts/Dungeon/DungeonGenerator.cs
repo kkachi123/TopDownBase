@@ -337,6 +337,23 @@ namespace TopDownBase.Dungeon
             return bounds;
         }
 
+        public override bool ToggleRoomLockAt(Vector3 worldPosition)
+        {
+            foreach (DungeonRoom room in _rooms)
+            {
+                Vector3 offset = worldPosition - room.transform.position;
+                bool inside = Mathf.Abs(offset.x) <= room.InteriorSize.x * 0.5f
+                              && Mathf.Abs(offset.z) <= room.InteriorSize.y * 0.5f;
+                if (inside)
+                {
+                    room.SetDoorsLocked(!room.DoorsLocked);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         // ---------- 방 조립 ----------
 
         private DungeonRoom BuildRoom(DungeonLayoutRoom data, Transform root, System.Random rng)

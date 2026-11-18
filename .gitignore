@@ -115,3 +115,12 @@ InitTestScene*.unity*
 
 # 외부 에셋 보관용 임시 폴더 제외
 /@Asset/
+# 외부 에셋: Git에서 제외, 각 PC에서 별도로 설치
+/[Aa]ssets/TopDownEngine/
+/[Aa]ssets/TopDownEngine.meta
+/[Aa]ssets/@Asset/
+/[Aa]ssets/@Asset.meta
+/[Aa]ssets/Fantasy Treasure Chest_Standard/
+/[Aa]ssets/Fantasy Treasure Chest_Standard.meta
+/[Aa]ssets/vFavorites/
+/[Aa]ssets/vFavorites.meta

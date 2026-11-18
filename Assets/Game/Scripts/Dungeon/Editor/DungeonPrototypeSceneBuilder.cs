@@ -2,17 +2,22 @@ using TopDownBase.Dungeon.Prototype;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 using UnityEngine.SceneManagement;
 
 namespace TopDownBase.Dungeon.Editor
 {
     /// <summary>
     /// 던전 생성 프로토타입 씬을 만들거나 여는 메뉴.
-    /// 씬에는 생성기·임시 이동체·카메라·조명만 저장하고, 던전 형상은 Play 시 생성한다.
+    /// 씬에는 생성기·임시 이동체·카메라·조명·후처리만 저장하고, 던전 형상은 Play 시 생성한다.
     /// </summary>
     public static class DungeonPrototypeSceneBuilder
     {
         public const string ScenePath = "Assets/Scenes/DungeonPrototype.unity";
+
+        private const string PropFolder = "Assets/Game/Environment/PolyStyle/Prefabs/Environments/";
+        private const string NatureVolumeProfilePath = "Assets/Game/Environment/PolyStyle/Settings/NatureVolumeProfile.asset";
 
         [MenuItem("TopDownBase/Dungeon Prototype/Create Or Open Scene")]
         public static void CreateOrOpenFromMenu()
@@ -36,10 +41,36 @@ namespace TopDownBase.Dungeon.Editor
 
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
-            var generatorObject = new GameObject("DungeonGenerator");
-            CreateRig(generatorObject.AddComponent<DungeonGenerator>());
+            var generator = new GameObject("DungeonGenerator").AddComponent<DungeonGenerator>();
+            ApplyNatureProps(generator);
+            Camera camera = CreateRig(generator);
+            AddPostProcessing(camera);
 
             EditorSceneManager.SaveScene(scene, ScenePath);
+        }
+
+        /// <summary>
+        /// 장애물과 경계 소품에 POLY STYLE 프리팹을 넣는다.
+        /// Rock_*: Vegetation Pack 2의 바위에 URP 머티리얼을 입히고 0.7배로 줄인 변형. 원래 크기로는 바닥 가림이 17%까지 올라간다.
+        /// </summary>
+        public static void ApplyNatureProps(DungeonGenerator generator)
+        {
+            generator.ObstaclePrefabs = LoadProps("Rock_1", "Rock_2", "Rock_3");
+            generator.ObstaclePrefabDiameter = 1.5f;
+            generator.LowProps = LoadProps("Rock_1", "Rock_2", "Rock_3", "Grass_1", "Grass_5", "Grass_10");
+            generator.TallProps = LoadProps("Tree_1", "Tree_2", "Tree_3");
+        }
+
+        /// <summary>
+        /// POLY STYLE 데모의 후처리(대비·채도·화이트밸런스·블룸 등)를 사본 프로필로 건다.
+        /// 이 에셋들은 후처리를 전제로 색을 잡아서, 없으면 칙칙하게 보인다.
+        /// </summary>
+        public static void AddPostProcessing(Camera camera)
+        {
+            var volume = new GameObject("Global Volume").AddComponent<Volume>();
+            volume.isGlobal = true;
+            volume.sharedProfile = AssetDatabase.LoadAssetAtPath<VolumeProfile>(NatureVolumeProfilePath);
+            camera.GetUniversalAdditionalCameraData().renderPostProcessing = true;
         }
 
         /// <summary>
@@ -79,6 +110,17 @@ namespace TopDownBase.Dungeon.Editor
             prototypeCamera.Target = walkerObject.transform;
             prototypeCamera.Generator = source;
             return camera;
+        }
+
+        private static GameObject[] LoadProps(params string[] names)
+        {
+            var props = new GameObject[names.Length];
+            for (int i = 0; i < names.Length; i++)
+            {
+                props[i] = AssetDatabase.LoadAssetAtPath<GameObject>(PropFolder + names[i] + ".prefab");
+            }
+
+            return props;
         }
     }
 }

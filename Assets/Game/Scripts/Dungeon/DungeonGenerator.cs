@@ -7,27 +7,31 @@ using UnityEngine.Rendering;
 namespace TopDownBase.Dungeon
 {
     /// <summary>
-    /// 보스 전 던전 구간을 생성하는 프로토타입.
-    /// 방 배치(DungeonLayout) → 방 조립(바닥·벽·문) → 장애물 스탬프 → 스폰 위치 → 보스 포털과 열쇠
-    /// → 주변 환경 → NavMesh 순서로 만든다.
-    /// 모든 형상은 기본 도형이며, 생성물은 "Generated" 자식 아래에만 놓인다.
-    /// Play 중에는 물론 에디터(편집 모드)에서도 생성할 수 있고, 생성물은 씬에 저장할 수 있다.
+    /// 보스 전 던전 구간을 "불규칙 공터 + 굽은 길 + 자연물 경계"로 생성한다.
+    /// 방 그래프(DungeonLayout) → 걸을 수 있는 영역 지도(WalkableMap) → 지면·충돌·소품 → 장애물
+    /// → 방(DungeonRoom)·스폰 위치 → 보스 포털과 열쇠 → 입구 잠금 → NavMesh 순서로 만든다.
+    /// 생성물은 "Generated" 자식 아래에만 놓이며 씬에 저장되지 않는다. Play 시작과 인스펙터 버튼으로 다시 만든다.
+    /// 지면은 DungeonGenerator.Ground.cs, 소품은 DungeonGenerator.Props.cs에 있다.
     /// </summary>
+    [ExecuteAlways]
     [DisallowMultipleComponent]
-    public class DungeonGenerator : DungeonMapSource
+    [RequireComponent(typeof(NavMeshSurface))]
+    public partial class DungeonGenerator : DungeonMapSource
     {
         private const string GeneratedRootName = "Generated";
-        private const float FloorThickness = 0.2f;
-        private const int PlacementTries = 20;
         // 방 배치와 섞이지 않도록 시드에서 따로 파생하는 난수의 구분값.
         private const int KeySeedSalt = 0x4B4559;
+        private const int MapSeedSalt = 0x4D4150;
         private const int EnvironmentSeedSalt = 0x454E56;
+        private const int ObstacleSeedSalt = 0x4F4253;
+        private const int SpawnSeedSalt = 0x53504E;
+        private const float MarkerDiameter = 1.4f;
 
         [Header("Seed")]
         public int Seed = 12345;
         [Tooltip("Play 시작 시 새 시드를 뽑는다. GenerateOnAwake가 켜져 있을 때만 쓰인다.")]
         public bool RandomizeSeedOnAwake = true;
-        [Tooltip("켜면 Play 시작 시 다시 생성한다. 끄면 씬에 저장된 맵을 그대로 쓴다.")]
+        [Tooltip("켜면 Play 시작 시 생성한다. 끄면 스크립트에서 Generate를 부를 때만 생성한다.")]
         public bool GenerateOnAwake = true;
 
         [Header("Layout")]
@@ -40,25 +44,48 @@ namespace TopDownBase.Dungeon
         [Min(0)] public int MinItemRooms = 1;
         [Min(1)] public int MaxLayoutAttempts = 50;
 
-        [Header("Room (tile units)")]
-        [Min(0.5f)] public float TileSize = 2f;
-        public Vector2Int RoomTiles = new Vector2Int(12, 10);
-        [Min(1)] public int DoorTiles = 3;
-        [Min(0.1f)] public float WallThickness = 1f;
-        [Min(0.1f)] public float WallHeight = 2f;
+        [Header("Shape")]
+        public WalkableShape Shape = WalkableShape.Clearing;
+        [Tooltip("방 하나가 쓸 수 있는 최대 크기(유닛). 공터는 이 안에서 만들어진다.")]
+        public Vector2 RoomSize = new Vector2(24f, 20f);
+        [Tooltip("이웃한 방 사이에 남기는 경계의 폭(유닛). 방 간격은 RoomSize + BoundaryWidth다. 맵 크기와 방 사이 숲의 두께를 정한다.")]
+        [Min(1f)] public float BoundaryWidth = 5f;
+        [Tooltip("공터 크기 배율의 (최소, 최대). Clearing 모양에서만 쓴다.")]
+        public Vector2 ClearingScale = new Vector2(0.8f, 1f);
+        [Tooltip("공터 중심을 방 안에서 흔드는 정도(0~1).")]
+        [Range(0f, 1f)] public float CenterJitter = 1f;
+        [Tooltip("공터 윤곽의 울퉁불퉁한 정도. 0.3을 넘기면 좁게 튀어나온 부분이 생긴다.")]
+        [Range(0f, 0.4f)] public float OutlineWobble = 0.2f;
+        [Tooltip("길 폭(유닛). NavMesh 에이전트 반지름이 1이라 4보다 좁히지 않는다.")]
+        [Min(2f)] public float PathWidth = 5f;
+        [Tooltip("길 가운데를 옆으로 미는 최대 거리(유닛). BoundaryWidth의 1/3 정도까지가 적당하다.")]
+        [Min(0f)] public float PathBend = 2f;
+        [Tooltip("맵 바깥쪽 숲의 폭(유닛).")]
+        [Min(2f)] public float OuterMargin = 10f;
 
         [Header("Obstacles (combat rooms)")]
         public Vector2Int ObstacleCount = new Vector2Int(2, 4);
-        [Tooltip("벽에서 띄우는 칸 수. 방 둘레에 항상 빈 통로가 남는다.")]
-        [Min(1)] public int ObstacleWallMargin = 2;
-        [Tooltip("스탬프 기준점 사이의 최소 칸 수. 스탬프끼리 붙어 길을 막지 않게 한다.")]
-        [Min(4)] public int ObstacleSpacing = 5;
+        [Tooltip("장애물 가장자리와 경계 사이의 거리(유닛). NavMesh 에이전트 지름보다 넉넉히 커야 그 사이로 지나갈 수 있다.")]
+        [Min(1f)] public float ObstacleMargin = 4f;
+        [Tooltip("장애물 중심 사이의 최소 거리(유닛).")]
+        [Min(2f)] public float ObstacleSpacing = 9f;
+        public Vector2 ObstacleRadius = new Vector2(1.2f, 2f);
         [Min(0.1f)] public float ObstacleHeight = 1.5f;
+        [Tooltip("장애물로 보여 줄 프리팹. 비워 두면 원기둥을 쓴다. 충돌은 프리팹과 상관없이 기둥 모양이다.")]
+        public GameObject[] ObstaclePrefabs;
+        [Tooltip("ObstaclePrefabs의 대략적인 바닥 지름(유닛). 장애물 반지름에 맞춰 크기를 정하는 데 쓴다.")]
+        [Min(0.1f)] public float ObstaclePrefabDiameter = 1.5f;
 
         [Header("Enemy spawns (combat rooms)")]
         public Vector2Int EnemySpawnCount = new Vector2Int(2, 4);
-        [Min(0)] public int SpawnDoorClearance = 3;
-        [Min(1)] public int SpawnSpacing = 2;
+        [Tooltip("경계에서 띄우는 거리(유닛).")]
+        [Min(0f)] public float SpawnEdgeMargin = 2f;
+        [Tooltip("입구에서 띄우는 거리(유닛). 방에 들어서자마자 적과 겹치지 않게 한다.")]
+        [Min(0f)] public float SpawnEntranceClearance = 5f;
+        [Tooltip("장애물 가장자리에서 띄우는 거리(유닛).")]
+        [Min(0f)] public float SpawnObstacleClearance = 1f;
+        [Tooltip("스폰 위치 사이의 최소 거리(유닛).")]
+        [Min(0f)] public float SpawnSpacing = 4f;
 
         [Header("Boss portal")]
         [Tooltip("포털에 들어가면 불러올 보스 씬 이름. Build Settings에 등록된 씬이어야 한다. 비워 두면 포털은 표식으로만 남는다.")]
@@ -66,18 +93,60 @@ namespace TopDownBase.Dungeon
         [Tooltip("아이템 방 중 한 곳에 열쇠를 두고, 얻기 전에는 포털을 잠근다.")]
         public bool LockPortalWithKey = true;
 
-        [Header("Environment")]
-        public bool BuildEnvironment = true;
-        [Tooltip("방이 없는 격자 칸과 외곽에 놓을 프리팹. 비워 두면 바닥만 깐다.")]
-        public GameObject[] EnvironmentPrefabs;
-        [Tooltip("던전 바깥쪽으로 환경을 넓힐 칸 수")]
-        [Min(0)] public int EnvironmentBorderCells = 1;
-        [Tooltip("빈 칸 하나에 놓는 프리팹 수 (최소, 최대)")]
-        public Vector2Int EnvironmentPerCell = new Vector2Int(3, 6);
-        [Tooltip("프리팹 크기 배율 (최소, 최대)")]
-        public Vector2 EnvironmentScale = new Vector2(0.8f, 1.3f);
-        [Tooltip("방의 남쪽에 붙은 빈 칸에서 방 쪽으로 비워 두는 거리(유닛). 카메라가 남쪽에서 내려다보므로 가까운 나무가 방 바닥을 가린다.")]
-        [Min(0f)] public float EnvironmentCameraClearance = 8f;
+        [Header("Gates")]
+        [Tooltip("길이 공터와 만나는 곳마다 잠금 오브젝트를 둔다. 처음에는 열려(꺼져) 있고, 방 단위로 잠근다(DungeonRoom.SetDoorsLocked).")]
+        public bool BuildGates = true;
+        [Tooltip("잠금 충돌체의 높이(유닛). 이동체가 넘지 못할 만큼 높아야 한다.")]
+        [Min(0.5f)] public float GateHeight = 3f;
+        [Tooltip("잠금 표시의 높이와 두께(유닛). 충돌체와 별개로 보이기만 한다.")]
+        [Min(0.1f)] public float GateVisualHeight = 1.2f;
+        [Min(0.1f)] public float GateVisualThickness = 0.6f;
+        public Color GateColor = new Color(0.75f, 0.25f, 0.2f);
+
+        [Header("Ground")]
+        [Tooltip("켜면 Terrain으로 지면을 만든다. 공터 가장자리가 부드럽게 섞이고 경계 바깥에 낮은 언덕이 생긴다. 끄면 평평한 판과 칸 단위 표면을 쓴다.")]
+        public bool UseTerrainGround = true;
+        [Tooltip("경계 바깥 언덕의 최대 높이(유닛). 캐릭터 키(2)보다 낮아야 남쪽 가장자리에서 캐릭터가 가려지지 않는다.")]
+        [Range(0f, 1.8f)] public float HillHeight = 1f;
+        [Tooltip("걸을 수 있는 영역의 끝에서 이 거리(유닛)까지는 평지로 둔다.")]
+        [Min(0.5f)] public float HillStart = 2.5f;
+        [Min(0.5f)] public float HillWidth = 4f;
+        [Min(1f)] public float HillNoiseScale = 12f;
+        [Tooltip("흙과 풀이 섞이는 폭(유닛).")]
+        [Min(0.1f)] public float EdgeBlend = 1.2f;
+        public int HeightmapResolution = 257;
+        public int AlphamapResolution = 512;
+        public Color GroundColor = new Color(0.33f, 0.45f, 0.28f);
+        public Color ClearingColor = new Color(0.52f, 0.47f, 0.38f);
+
+        [Header("Props")]
+        public DungeonPropRendering PropRendering = DungeonPropRendering.Instanced;
+        public bool PropsCastShadows = true;
+        [Tooltip("끄면 가장자리의 낮은 소품은 그림자를 드리우지 않는다. 그림자 단계마다 한 번씩 더 그리는 비용이 줄어든다.")]
+        public bool LowPropsCastShadows;
+        [Tooltip("화면 밖이라도 이 거리(유닛) 안의 소품은 그린다. 화면 밖 나무의 그림자가 화면 안으로 드리워지기 때문이다.")]
+        [Min(0f)] public float ShadowCullPadding = 8f;
+        [Tooltip("경계 가장자리에 놓는 낮은 소품(바위, 덤불). 루트에 메시 하나가 있는 프리팹이어야 묶어 그릴 수 있다.")]
+        public GameObject[] LowProps;
+        [Tooltip("가장자리 바깥에 놓는 키 큰 소품(나무).")]
+        public GameObject[] TallProps;
+        [Tooltip("걸을 수 있는 영역에서 이 거리(유닛) 안쪽의 막힌 칸을 가장자리로 본다.")]
+        [Min(1f)] public float EdgeDepth = 2f;
+        [Range(0f, 1f)] public float EdgeDensity = 0.55f;
+        [Tooltip("걸을 수 있는 곳과 바로 맞닿은 첫 줄(대각선 포함)의 소품 밀도. 높이면 공터와 길의 테두리가 끊기지 않는다.")]
+        [Range(0f, 1f)] public float RimDensity = 0.85f;
+        [Range(0f, 1f)] public float FillDensity = 0.07f;
+        [Tooltip("가장자리 소품의 크기 배율. 크게 하면 소품이 걸을 수 있는 영역 위로 넘어와 바닥을 가린다.")]
+        public Vector2 LowPropScale = new Vector2(0.7f, 1.2f);
+        public Vector2 TallPropScale = new Vector2(1.2f, 2.2f);
+        [Tooltip("북쪽으로 이 거리(유닛) 안에 걸을 수 있는 곳이 있으면 키 큰 소품을 놓지 않는다. 카메라가 남쪽에서 내려다보기 때문이다. 소품이 높으면 그 높이가 가리는 거리까지 자동으로 늘어난다.")]
+        [Min(0f)] public float CameraClearance = 8f;
+        [Tooltip("게임 카메라가 내려다보는 각도. 키 큰 소품이 바닥을 가리는 거리를 계산하는 데 쓴다.")]
+        [Range(20f, 90f)] public float CameraPitch = 40f;
+
+        [Header("Collision")]
+        [Tooltip("걸을 수 없는 칸을 덮는 보이지 않는 상자의 높이(유닛).")]
+        [Min(1f)] public float BlockerHeight = 3f;
 
         [Header("NavMesh")]
         public bool BuildNavMesh = true;
@@ -85,46 +154,33 @@ namespace TopDownBase.Dungeon
         [Header("Look")]
         [Tooltip("비워 두면 현재 렌더 파이프라인의 기본 머티리얼을 쓴다.")]
         public Material BaseMaterial;
-        public Color FloorColor = new Color(0.45f, 0.42f, 0.38f);
-        public Color WallColor = new Color(0.25f, 0.25f, 0.28f);
         public Color ObstacleColor = new Color(0.55f, 0.4f, 0.25f);
-        public Color DoorBlockerColor = new Color(0.8f, 0.2f, 0.2f);
         public Color StartColor = new Color(0.2f, 0.75f, 0.3f);
         public Color EnemyColor = new Color(0.85f, 0.2f, 0.2f);
         public Color ItemColor = new Color(0.95f, 0.8f, 0.2f);
         public Color BossGateColor = new Color(0.6f, 0.25f, 0.85f);
         public Color PortalLockedColor = new Color(0.3f, 0.28f, 0.33f);
         public Color KeyColor = new Color(0.2f, 0.85f, 0.9f);
-        public Color GroundColor = new Color(0.33f, 0.45f, 0.28f);
-
-        /// <summary>기둥·낮은 벽 등 작은 장애물 묶음. 칸 좌표는 기준점(왼쪽 아래)에서의 오프셋이다.</summary>
-        private static readonly Vector2Int[][] Stamps =
-        {
-            new[] { new Vector2Int(0, 0), new Vector2Int(1, 0), new Vector2Int(0, 1), new Vector2Int(1, 1) },
-            new[] { new Vector2Int(0, 0), new Vector2Int(1, 0), new Vector2Int(2, 0) },
-            new[] { new Vector2Int(0, 0), new Vector2Int(0, 1), new Vector2Int(0, 2) },
-            new[] { new Vector2Int(0, 0), new Vector2Int(1, 0), new Vector2Int(0, 1) },
-            new[] { new Vector2Int(0, 1), new Vector2Int(1, 1), new Vector2Int(1, 0) }
-        };
 
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         private static readonly int ColorId = Shader.PropertyToID("_Color");
 
-        // 색상별로 하나씩 만든 머티리얼. 씬에 함께 저장되어 다시 열어도 색이 유지되고, Clear에서 지운다.
-        [SerializeField, HideInInspector] private List<Material> _generatedMaterials = new List<Material>();
-
-        // 생성 결과에 대한 참조. 씬에 함께 저장되므로 저장된 맵을 다시 쓸 때 이름이나 타입으로 찾지 않는다.
-        [SerializeField, HideInInspector] private Transform _generatedRoot;
-        [SerializeField, HideInInspector] private List<DungeonRoom> _rooms = new List<DungeonRoom>();
-        [SerializeField, HideInInspector] private DungeonRoom _startRoom;
-        [SerializeField, HideInInspector] private DungeonRoom _bossGateRoom;
-        [SerializeField, HideInInspector] private NavMeshSurface _navMeshSurface;
-        [SerializeField, HideInInspector] private DungeonPortal _bossPortal;
-        [SerializeField, HideInInspector] private DungeonKeyPickup _keyPickup;
-
         private readonly Dictionary<Color, Material> _materialsByColor = new Dictionary<Color, Material>();
+        // 생성 중에 만든 머티리얼·메시·지형 데이터. 저장되지 않으며 Clear에서 지운다.
+        private readonly List<Object> _createdAssets = new List<Object>();
+        private readonly List<Collider> _obstacleColliders = new List<Collider>();
+        private readonly List<DungeonRoom> _rooms = new List<DungeonRoom>();
+        private Transform _generatedRoot;
+        private NavMeshSurface _navMeshSurface;
+        private DungeonRoom _startRoom;
+        private DungeonRoom _bossGateRoom;
+        private DungeonPortal _bossPortal;
+        private DungeonKeyPickup _keyPickup;
 
         public DungeonLayout Layout { get; private set; }
+        /// <summary>걸을 수 있는 영역 지도. 방 모양, 길, 입구, 장애물, 스폰 위치를 담는다.</summary>
+        public WalkableMap Map { get; private set; }
+        /// <summary>방 목록. 순서는 Layout.Rooms, Map.Rooms와 같다.</summary>
         public IReadOnlyList<DungeonRoom> Rooms => _rooms;
         public DungeonRoom StartRoom => _startRoom;
         public DungeonRoom BossGateRoom => _bossGateRoom;
@@ -132,37 +188,33 @@ namespace TopDownBase.Dungeon
         public DungeonPortal BossPortal => _bossPortal;
         /// <summary>포털을 여는 열쇠. 열쇠 방이 없는 배치나 잠금을 끈 경우에는 null이다.</summary>
         public DungeonKeyPickup KeyPickup => _keyPickup;
-
-        /// <summary>씬에 생성물이 있는지. 에디터에서 만든 뒤 저장한 맵도 포함한다.</summary>
         public bool HasGeneratedMap => _generatedRoot != null;
-
-        /// <summary>마지막 생성(또는 저장된 맵 인식)의 한 줄 요약. 인스펙터 표시용이며 저장되지 않는다.</summary>
+        /// <summary>마지막 생성의 한 줄 요약. 인스펙터 표시용이다.</summary>
         public string LastReport { get; private set; }
+        /// <summary>마지막 생성에 걸린 시간(ms). NavMesh 빌드를 포함한다.</summary>
+        public double LastGenerateMilliseconds { get; private set; }
+        public int GeneratedObjectCount { get; private set; }
 
-        /// <summary>플레이어를 놓을 위치(시작 방 중앙).</summary>
+        /// <summary>플레이어를 놓을 위치(시작 공터 중심).</summary>
         public override Vector3 StartPosition => StartRoom != null ? StartRoom.transform.position : transform.position;
 
-        /// <summary>방 중심 사이의 간격. 방 안쪽 크기에 벽 두께를 더한 값이다.</summary>
-        private Vector2 CellPitch => InteriorSize + Vector2.one * WallThickness;
-
-        private Vector2 InteriorSize => new Vector2(RoomTiles.x * TileSize, RoomTiles.y * TileSize);
+        /// <summary>이 생성기의 NavMeshSurface가 쓰는 에이전트 반지름.</summary>
+        public float AgentRadius => NavMesh.GetSettingsByID(GetNavMeshSurface().agentTypeID).agentRadius;
 
         private void OnValidate()
         {
-            // 문과 벽을 만들 수 있는 최소 크기를 보장한다.
             GridSize = Vector2Int.Max(GridSize, Vector2Int.one);
-            EnvironmentPerCell = Vector2Int.Max(EnvironmentPerCell, Vector2Int.zero);
-            EnvironmentScale = Vector2.Max(EnvironmentScale, Vector2.one * 0.01f);
-            RoomTiles = Vector2Int.Max(RoomTiles, new Vector2Int(4, 4));
+            RoomSize = Vector2.Max(RoomSize, Vector2.one * 8f);
             ObstacleCount = Vector2Int.Max(ObstacleCount, Vector2Int.zero);
+            ObstacleRadius = Vector2.Max(ObstacleRadius, Vector2.one * 0.3f);
             EnemySpawnCount = Vector2Int.Max(EnemySpawnCount, Vector2Int.zero);
         }
 
         private void Awake()
         {
-            if (!GenerateOnAwake)
+            // ExecuteAlways 때문에 편집 모드에서도 불린다. 자동 생성은 Play에서만 한다.
+            if (!Application.isPlaying || !GenerateOnAwake)
             {
-                AdoptExistingMap();
                 return;
             }
 
@@ -174,6 +226,12 @@ namespace TopDownBase.Dungeon
             Generate();
         }
 
+        private void OnDisable()
+        {
+            // 생성물은 저장 대상이 아니므로 Play 진입·종료, 씬 닫기, 스크립트 재컴파일 때 스스로 치운다.
+            Clear();
+        }
+
         public override void GenerateWithRandomSeed()
         {
             Seed = System.Environment.TickCount;
@@ -183,8 +241,8 @@ namespace TopDownBase.Dungeon
         public void Generate()
         {
             Clear();
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
-            var rng = new System.Random(Seed);
             Layout = DungeonLayout.Generate(new DungeonLayoutSettings
             {
                 GridSize = GridSize,
@@ -193,53 +251,62 @@ namespace TopDownBase.Dungeon
                 MinBossPathLength = MinBossPathLength,
                 MinItemRooms = MinItemRooms,
                 MaxAttempts = MaxLayoutAttempts
-            }, rng);
+            }, new System.Random(Seed));
 
             if (LockPortalWithKey)
             {
                 Layout.PickKeyRoom(new System.Random(Seed ^ KeySeedSalt));
             }
 
-            Transform root = new GameObject(GeneratedRootName).transform;
-            root.SetParent(transform, false);
-            _generatedRoot = root;
-
-            var roomsByCell = new Dictionary<Vector2Int, DungeonRoom>();
-            foreach (DungeonLayoutRoom data in Layout.Rooms)
+            Map = WalkableMap.Build(Layout, new WalkableMapSettings
             {
-                DungeonRoom room = BuildRoom(data, root, rng);
-                roomsByCell.Add(data.Cell, room);
-                _rooms.Add(room);
-            }
+                Shape = Shape,
+                RoomSize = RoomSize,
+                BoundaryWidth = BoundaryWidth,
+                ClearingScale = ClearingScale,
+                CenterJitter = CenterJitter,
+                OutlineWobble = OutlineWobble,
+                PathWidth = PathWidth,
+                PathBend = PathBend,
+                OuterMargin = OuterMargin,
+                ObstacleCount = ObstacleCount,
+                ObstacleMargin = ObstacleMargin,
+                ObstacleSpacing = ObstacleSpacing,
+                ObstacleRadius = ObstacleRadius
+            }, new System.Random(Seed ^ MapSeedSalt));
 
-            _startRoom = roomsByCell[Layout.StartCell];
-            _bossGateRoom = roomsByCell[Layout.BossGateCell];
-
-            foreach (DungeonLayoutRoom data in Layout.Rooms)
+            Map.PlaceEnemySpawns(new WalkableSpawnSettings
             {
-                BuildWalls(data, roomsByCell);
-            }
+                Count = EnemySpawnCount,
+                EdgeMargin = SpawnEdgeMargin,
+                EntranceClearance = SpawnEntranceClearance,
+                ObstacleClearance = SpawnObstacleClearance,
+                Spacing = SpawnSpacing
+            }, new System.Random(Seed ^ SpawnSeedSalt));
 
-            BuildCornerPosts(root);
-            BuildBossPortalAndKey(roomsByCell);
+            _generatedRoot = new GameObject(GeneratedRootName).transform;
+            _generatedRoot.SetParent(transform, false);
 
-            if (BuildEnvironment)
-            {
-                BuildEnvironmentAround(root, new System.Random(Seed ^ EnvironmentSeedSalt));
-            }
+            BuildGround(_generatedRoot, new System.Random(Seed ^ EnvironmentSeedSalt));
+            BuildObstacles(_generatedRoot, new System.Random(Seed ^ ObstacleSeedSalt));
+            BuildRooms(_generatedRoot);
+            BuildBossPortalAndKey();
+            // 잠금 오브젝트는 꺼진 채로 만들어 NavMesh에는 열린 상태가 구워진다.
+            BuildGateObjects(_generatedRoot);
 
-            string navMeshReport = "skipped";
-            if (BuildNavMesh)
-            {
-                navMeshReport = BakeAndCheckNavMesh();
-            }
+            string navMeshReport = BuildNavMesh ? BakeAndCheckNavMesh() : "skipped";
+
+            GeneratedObjectCount = CountAndFlag(_generatedRoot);
+            stopwatch.Stop();
+            LastGenerateMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
 
             string portalReport = _bossPortal.HasDestination
                 ? (_bossPortal.IsLocked ? "locked by key" : "open")
                 : "no destination";
             LastReport = $"seed {Seed}: rooms {Layout.Rooms.Count}, boss path {Layout.BossPathLength}, " +
-                         $"item rooms {Layout.ItemRoomCount}, layout attempts {Layout.Attempts}, " +
-                         $"requirements met {Layout.MeetsRequirements}, portal {portalReport}, navmesh {navMeshReport}";
+                         $"item rooms {Layout.ItemRoomCount}, entrances {Map.Entrances.Count}, " +
+                         $"enemy spawns {Map.EnemySpawns.Count}, portal {portalReport}, navmesh {navMeshReport}, " +
+                         $"objects {GeneratedObjectCount}, {LastGenerateMilliseconds:0} ms";
             Debug.Log($"[Dungeon] {LastReport}", this);
 
             if (string.IsNullOrEmpty(BossSceneName))
@@ -254,46 +321,25 @@ namespace TopDownBase.Dungeon
             }
         }
 
-        /// <summary>
-        /// 다시 생성하지 않고 씬에 저장된 맵을 그대로 쓴다. 저장된 방 참조를 그대로 쓰고 NavMesh만 새로 굽는다.
-        /// 에디터에서 만든 맵을 손으로 고쳐 쓰는 경우를 위한 경로이며, 이때 Layout은 비어 있다.
-        /// </summary>
-        public bool AdoptExistingMap()
-        {
-            Layout = null;
-
-            if (_generatedRoot == null)
-            {
-                _rooms.Clear();
-                _startRoom = null;
-                _bossGateRoom = null;
-                LastReport = null;
-                return false;
-            }
-
-            // 에디터에서 손으로 지운 방은 목록에서 뺀다.
-            _rooms.RemoveAll(room => room == null);
-
-            string navMeshReport = BuildNavMesh ? BakeAndCheckNavMesh() : "skipped";
-            LastReport = $"saved map: rooms {_rooms.Count}, navmesh {navMeshReport}";
-            Debug.Log($"[Dungeon] {LastReport}", this);
-            return true;
-        }
-
         public void Clear()
         {
+            Layout = null;
+            Map = null;
+            LastReport = null;
             _rooms.Clear();
             _startRoom = null;
             _bossGateRoom = null;
             _bossPortal = null;
             _keyPickup = null;
-            Layout = null;
-            LastReport = null;
+            _obstacleColliders.Clear();
 
             if (_navMeshSurface != null)
             {
                 ReleaseNavMeshData(_navMeshSurface);
             }
+
+            ClearProps();
+            ClearGround();
 
             if (_generatedRoot != null)
             {
@@ -302,313 +348,206 @@ namespace TopDownBase.Dungeon
                 _generatedRoot = null;
             }
 
-            foreach (Material material in _generatedMaterials)
+            foreach (Object asset in _createdAssets)
             {
-                if (material != null)
+                if (asset != null)
                 {
-                    DestroyImmediate(material);
+                    DestroyImmediate(asset);
                 }
             }
 
-            _generatedMaterials.Clear();
+            _createdAssets.Clear();
             _materialsByColor.Clear();
         }
 
-        /// <summary>던전 전체를 감싸는 월드 영역. 전체 보기 카메라에 쓴다.</summary>
+        /// <summary>맵 전체를 감싸는 월드 영역. 전체 보기 카메라에 쓴다.</summary>
         public override Bounds GetWorldBounds()
         {
-            var bounds = new Bounds(transform.position, Vector3.zero);
-            bool first = true;
-            foreach (DungeonRoom room in _rooms)
+            if (Map == null)
             {
-                var roomBounds = new Bounds(room.transform.position,
-                    new Vector3(CellPitch.x, WallHeight, CellPitch.y));
-                if (first)
-                {
-                    bounds = roomBounds;
-                    first = false;
-                }
-                else
-                {
-                    bounds.Encapsulate(roomBounds);
-                }
+                return new Bounds(transform.position, Vector3.zero);
             }
 
-            return bounds;
+            Vector2 center = Map.Origin + new Vector2(Map.Width, Map.Height) * 0.5f;
+            return new Bounds(ToWorld(center), new Vector3(Map.Width, 4f, Map.Height));
+        }
+
+        /// <summary>월드 위치가 들어 있는 방. 길이나 경계 위면 null.</summary>
+        public DungeonRoom RoomAt(Vector3 worldPosition)
+        {
+            if (Map == null)
+            {
+                return null;
+            }
+
+            Vector3 local = transform.InverseTransformPoint(worldPosition);
+            int index = Map.RoomIndexAt(new Vector2(local.x, local.z));
+            return index >= 0 && index < _rooms.Count ? _rooms[index] : null;
         }
 
         public override bool ToggleRoomLockAt(Vector3 worldPosition)
         {
-            foreach (DungeonRoom room in _rooms)
+            DungeonRoom room = RoomAt(worldPosition);
+            if (room == null)
             {
-                Vector3 offset = worldPosition - room.transform.position;
-                bool inside = Mathf.Abs(offset.x) <= room.InteriorSize.x * 0.5f
-                              && Mathf.Abs(offset.z) <= room.InteriorSize.y * 0.5f;
-                if (inside)
-                {
-                    room.SetDoorsLocked(!room.DoorsLocked);
-                    return true;
-                }
+                return false;
             }
 
-            return false;
-        }
-
-        // ---------- 방 조립 ----------
-
-        private DungeonRoom BuildRoom(DungeonLayoutRoom data, Transform root, System.Random rng)
-        {
-            var roomObject = new GameObject($"Room_{data.Cell.x}_{data.Cell.y}_{data.Role}");
-            Transform roomTransform = roomObject.transform;
-            roomTransform.SetParent(root, false);
-            roomTransform.localPosition = new Vector3(data.Cell.x * CellPitch.x, 0f, data.Cell.y * CellPitch.y);
-
-            var room = roomObject.AddComponent<DungeonRoom>();
-            room.Initialize(data.Role, data.Cell, data.DistanceFromStart, InteriorSize);
-            if (data.HasKey)
-            {
-                room.MarkAsKeyRoom();
-            }
-
-            // 바닥은 벽 아래와 문턱까지 덮도록 방 간격 크기로 만든다. 역할 색을 옅게 섞어 전체 보기에서 구분한다.
-            Color floorColor = Color.Lerp(FloorColor, RoleColor(data.Role), data.Role == DungeonRoomRole.Combat ? 0f : 0.3f);
-            CreateBox("Floor", roomTransform,
-                new Vector3(0f, -FloorThickness * 0.5f, 0f),
-                new Vector3(CellPitch.x, FloorThickness, CellPitch.y),
-                floorColor, true);
-
-            switch (data.Role)
-            {
-                case DungeonRoomRole.Combat:
-                    bool[,] occupied = PlaceObstacles(roomTransform, rng);
-                    PlaceEnemySpawns(data, room, occupied, rng);
-                    break;
-                case DungeonRoomRole.Start:
-                    CreateMarker("PlayerStart", roomTransform, Vector3.zero, StartColor);
-                    break;
-                case DungeonRoomRole.Item:
-                    // 열쇠 방에는 아이템 표식 대신 열쇠가 놓인다(BuildBossPortalAndKey).
-                    if (!data.HasKey)
-                    {
-                        CreateMarker("ItemSpawn", roomTransform, Vector3.zero, ItemColor);
-                    }
-
-                    break;
-            }
-
-            return room;
+            room.SetDoorsLocked(!room.DoorsLocked);
+            return true;
         }
 
         /// <summary>
-        /// 스탬프를 벽에서 ObstacleWallMargin칸, 서로 ObstacleSpacing칸 이상 띄워 놓는다.
-        /// 이 두 규칙만으로 빈 칸이 모두 이어지므로 도달 가능성 검사를 따로 하지 않는다.
+        /// 카메라가 내려다보는 방향으로 광선을 쏴, 걸을 수 있는 면적 중 가려지는 비율을 잰다.
+        /// 경계 소품과 장애물이 바닥을 얼마나 가리는지 확인하는 지표다.
         /// </summary>
-        private bool[,] PlaceObstacles(Transform roomTransform, System.Random rng)
+        public float MeasureOccludedRatio(float cameraPitchDegrees, int step = 2)
         {
-            var occupied = new bool[RoomTiles.x, RoomTiles.y];
-            var origins = new List<Vector2Int>();
-            int count = rng.Next(ObstacleCount.x, Mathf.Max(ObstacleCount.x, ObstacleCount.y) + 1);
-
-            for (int i = 0; i < count; i++)
+            if (Map == null)
             {
-                for (int attempt = 0; attempt < PlacementTries; attempt++)
+                return 0f;
+            }
+
+            float pitch = cameraPitchDegrees * Mathf.Deg2Rad;
+            var towardCamera = new Vector3(0f, Mathf.Sin(pitch), -Mathf.Cos(pitch));
+            int samples = 0;
+            int occluded = 0;
+
+            for (int x = 0; x < Map.Width; x += step)
+            {
+                for (int y = 0; y < Map.Height; y += step)
                 {
-                    Vector2Int[] stamp = Stamps[rng.Next(Stamps.Length)];
-                    Vector2Int size = StampSize(stamp);
-                    int maxX = RoomTiles.x - ObstacleWallMargin - size.x;
-                    int maxY = RoomTiles.y - ObstacleWallMargin - size.y;
-                    if (maxX < ObstacleWallMargin || maxY < ObstacleWallMargin)
+                    if (!Map.IsWalkable(x, y))
                     {
                         continue;
                     }
 
-                    var origin = new Vector2Int(
-                        rng.Next(ObstacleWallMargin, maxX + 1),
-                        rng.Next(ObstacleWallMargin, maxY + 1));
-
-                    if (!IsFarFromAll(origin, origins, ObstacleSpacing))
+                    samples++;
+                    Vector3 point = ToWorld(Map.CellCenter(x, y)) + Vector3.up * 0.05f;
+                    if (IsOccluded(point, towardCamera, 60f))
                     {
-                        continue;
+                        occluded++;
                     }
-
-                    origins.Add(origin);
-                    foreach (Vector2Int offset in stamp)
-                    {
-                        Vector2Int tile = origin + offset;
-                        occupied[tile.x, tile.y] = true;
-                        Vector3 position = TileToLocal(tile);
-                        position.y = ObstacleHeight * 0.5f;
-                        CreateBox("Obstacle", roomTransform, position,
-                            new Vector3(TileSize, ObstacleHeight, TileSize), ObstacleColor, true);
-                    }
-
-                    break;
                 }
             }
 
-            return occupied;
+            return samples > 0 ? (float)occluded / samples : 0f;
         }
 
-        private void PlaceEnemySpawns(DungeonLayoutRoom data, DungeonRoom room, bool[,] occupied, System.Random rng)
-        {
-            // 문 앞은 비워 둔다. 방에 들어서자마자 적과 겹치지 않게 하기 위함이다.
-            var doorPositions = new List<Vector3>();
-            foreach (Vector2Int neighbour in data.Neighbours)
-            {
-                Vector2Int direction = neighbour - data.Cell;
-                doorPositions.Add(new Vector3(direction.x * CellPitch.x * 0.5f, 0f, direction.y * CellPitch.y * 0.5f));
-            }
+        // ---------- 장애물 ----------
 
-            float doorClearance = SpawnDoorClearance * TileSize;
-            var candidates = new List<Vector2Int>();
-            for (int x = 0; x < RoomTiles.x; x++)
+        private void BuildObstacles(Transform root, System.Random rng)
+        {
+            Transform obstacles = new GameObject("Obstacles").transform;
+            obstacles.SetParent(root, false);
+
+            foreach (WalkableObstacle obstacle in Map.Obstacles)
             {
-                for (int y = 0; y < RoomTiles.y; y++)
+                var obstacleObject = new GameObject("Obstacle");
+                obstacleObject.transform.SetParent(obstacles, false);
+                obstacleObject.transform.localPosition = ToLocal(obstacle.Position);
+
+                // 보이는 모양과 상관없이 충돌은 단순한 기둥으로 둔다.
+                var capsule = obstacleObject.AddComponent<CapsuleCollider>();
+                capsule.radius = obstacle.Radius;
+                capsule.height = Mathf.Max(ObstacleHeight, obstacle.Radius * 2f);
+                capsule.center = new Vector3(0f, capsule.height * 0.5f, 0f);
+                _obstacleColliders.Add(capsule);
+
+                float yaw = (float)rng.NextDouble() * 360f;
+                if (ObstaclePrefabs != null && ObstaclePrefabs.Length > 0)
                 {
-                    if (occupied[x, y])
+                    GameObject prefab = ObstaclePrefabs[rng.Next(ObstaclePrefabs.Length)];
+                    if (prefab != null)
                     {
+                        GameObject visual = Instantiate(prefab, obstacleObject.transform);
+                        visual.name = prefab.name;
+                        visual.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+                        visual.transform.localScale = prefab.transform.localScale
+                                                      * (obstacle.Radius * 2f / ObstaclePrefabDiameter);
+                        // 프리팹에 달린 충돌체(MeshCollider 등)는 뗀다. 충돌은 위의 기둥이 맡고,
+                        // 남겨 두면 NavMesh가 읽기 권한 없는 메시를 소스로 모으려 한다.
+                        foreach (Collider collider in visual.GetComponentsInChildren<Collider>(true))
+                        {
+                            DestroyImmediate(collider);
+                        }
+
                         continue;
                     }
-
-                    Vector3 position = TileToLocal(new Vector2Int(x, y));
-                    bool nearDoor = false;
-                    foreach (Vector3 door in doorPositions)
-                    {
-                        if (Vector3.Distance(position, door) < doorClearance)
-                        {
-                            nearDoor = true;
-                            break;
-                        }
-                    }
-
-                    if (!nearDoor)
-                    {
-                        candidates.Add(new Vector2Int(x, y));
-                    }
                 }
+
+                CreatePrimitive(PrimitiveType.Cylinder, "Visual", obstacleObject.transform,
+                    new Vector3(0f, ObstacleHeight * 0.5f, 0f),
+                    new Vector3(obstacle.Radius * 2f, ObstacleHeight * 0.5f, obstacle.Radius * 2f),
+                    ObstacleColor, false);
+            }
+        }
+
+        // ---------- 방과 스폰 위치 ----------
+
+        /// <summary>공터마다 DungeonRoom을 만들고 역할 표식과 적 스폰 위치를 단다. 방 오브젝트는 공터 중심에 놓인다.</summary>
+        private void BuildRooms(Transform root)
+        {
+            Transform rooms = new GameObject("Rooms").transform;
+            rooms.SetParent(root, false);
+
+            foreach (WalkableRoom walkable in Map.Rooms)
+            {
+                DungeonLayoutRoom data = walkable.Data;
+                var roomObject = new GameObject($"Room_{data.Cell.x}_{data.Cell.y}_{data.Role}");
+                roomObject.transform.SetParent(rooms, false);
+                roomObject.transform.localPosition = ToLocal(walkable.Center);
+
+                var room = roomObject.AddComponent<DungeonRoom>();
+                room.Initialize(data.Role, data.Cell, data.DistanceFromStart, walkable.Radius * 2f);
+                if (data.HasKey)
+                {
+                    room.MarkAsKeyRoom();
+                }
+
+                switch (data.Role)
+                {
+                    case DungeonRoomRole.Start:
+                        CreateMarker("PlayerStart", roomObject.transform, Vector3.zero, StartColor);
+                        _startRoom = room;
+                        break;
+                    case DungeonRoomRole.BossGate:
+                        _bossGateRoom = room;
+                        break;
+                    case DungeonRoomRole.Item:
+                        // 열쇠 방에는 아이템 표식 대신 열쇠가 놓인다(BuildBossPortalAndKey).
+                        if (!data.HasKey)
+                        {
+                            CreateMarker("ItemSpawn", roomObject.transform, Vector3.zero, ItemColor);
+                        }
+
+                        break;
+                }
+
+                _rooms.Add(room);
             }
 
-            Shuffle(candidates, rng);
-
-            int count = rng.Next(EnemySpawnCount.x, Mathf.Max(EnemySpawnCount.x, EnemySpawnCount.y) + 1);
-            var chosen = new List<Vector2Int>();
-            foreach (Vector2Int tile in candidates)
+            foreach (WalkableSpawn spawn in Map.EnemySpawns)
             {
-                if (chosen.Count >= count)
-                {
-                    break;
-                }
-
-                if (!IsFarFromAll(tile, chosen, SpawnSpacing))
-                {
-                    continue;
-                }
-
-                chosen.Add(tile);
-                GameObject marker = CreateMarker("EnemySpawn", room.transform, TileToLocal(tile), EnemyColor);
+                DungeonRoom room = _rooms[spawn.RoomIndex];
+                Vector3 local = ToLocal(spawn.Position) - room.transform.localPosition;
+                GameObject marker = CreateMarker("EnemySpawn", room.transform, local, EnemyColor);
                 room.AddEnemySpawnPoint(marker.transform);
-            }
-        }
-
-        // ---------- 벽과 문 ----------
-
-        private void BuildWalls(DungeonLayoutRoom data, Dictionary<Vector2Int, DungeonRoom> roomsByCell)
-        {
-            DungeonRoom room = roomsByCell[data.Cell];
-
-            foreach (Vector2Int direction in DungeonLayout.Directions)
-            {
-                Vector2Int neighbourCell = data.Cell + direction;
-                bool neighbourExists = roomsByCell.ContainsKey(neighbourCell);
-
-                // 방 사이 벽은 한 번만 만든다: 동·북쪽은 자신이, 서·남쪽은 이웃이 없을 때만 만든다.
-                bool ownsWall = direction.x > 0 || direction.y > 0 || !neighbourExists;
-                if (!ownsWall)
-                {
-                    continue;
-                }
-
-                bool alongZ = direction.x != 0;
-                float length = alongZ ? InteriorSize.y : InteriorSize.x;
-                Vector3 axis = alongZ ? Vector3.forward : Vector3.right;
-                var center = new Vector3(
-                    direction.x * CellPitch.x * 0.5f,
-                    WallHeight * 0.5f,
-                    direction.y * CellPitch.y * 0.5f);
-
-                if (!data.Neighbours.Contains(neighbourCell))
-                {
-                    CreateWall(room.transform, center, length, alongZ);
-                    continue;
-                }
-
-                float doorWidth = Mathf.Min(DoorTiles * TileSize, length - TileSize);
-                float segmentLength = (length - doorWidth) * 0.5f;
-                float segmentOffset = (doorWidth + segmentLength) * 0.5f;
-                CreateWall(room.transform, center + axis * segmentOffset, segmentLength, alongZ);
-                CreateWall(room.transform, center - axis * segmentOffset, segmentLength, alongZ);
-
-                // 문 차단물은 꺼 둔 채로 만들어 두고, 방 잠금 시 양쪽 방이 함께 켠다.
-                Vector3 blockerSize = alongZ
-                    ? new Vector3(WallThickness * 0.6f, WallHeight, doorWidth)
-                    : new Vector3(doorWidth, WallHeight, WallThickness * 0.6f);
-                GameObject blocker = CreateBox("DoorBlocker", room.transform, center, blockerSize, DoorBlockerColor, true);
-                blocker.SetActive(false);
-                room.AddDoorBlocker(blocker);
-                roomsByCell[neighbourCell].AddDoorBlocker(blocker);
-            }
-        }
-
-        private void CreateWall(Transform parent, Vector3 center, float length, bool alongZ)
-        {
-            Vector3 size = alongZ
-                ? new Vector3(WallThickness, WallHeight, length)
-                : new Vector3(length, WallHeight, WallThickness);
-            CreateBox("Wall", parent, center, size, WallColor, true);
-        }
-
-        /// <summary>벽은 방 안쪽 길이만큼만 만들고, 모서리는 겹치지 않도록 기둥 하나로 채운다.</summary>
-        private void BuildCornerPosts(Transform root)
-        {
-            Transform posts = new GameObject("CornerPosts").transform;
-            posts.SetParent(root, false);
-
-            var built = new HashSet<Vector2Int>();
-            foreach (DungeonLayoutRoom data in Layout.Rooms)
-            {
-                for (int dx = 0; dx <= 1; dx++)
-                {
-                    for (int dy = 0; dy <= 1; dy++)
-                    {
-                        var corner = new Vector2Int(data.Cell.x + dx, data.Cell.y + dy);
-                        if (!built.Add(corner))
-                        {
-                            continue;
-                        }
-
-                        var position = new Vector3(
-                            (corner.x - 0.5f) * CellPitch.x,
-                            WallHeight * 0.5f,
-                            (corner.y - 0.5f) * CellPitch.y);
-                        CreateBox("CornerPost", posts, position,
-                            new Vector3(WallThickness, WallHeight, WallThickness), WallColor, true);
-                    }
-                }
             }
         }
 
         // ---------- 보스 포털과 열쇠 ----------
 
         /// <summary>
-        /// 보스 입구 방에 포털을, 열쇠 방에 열쇠를 만들고 서로 연결한다.
+        /// 보스 입구 공터에 포털을, 열쇠 방 공터에 열쇠를 만들고 서로 연결한다.
         /// 포털은 불러올 보스 씬의 이름만 알며 투기장의 크기나 구성에는 의존하지 않는다.
         /// 열쇠 방이 없는 배치에서는 포털을 열어 둔 채로 만들어 진행이 막히지 않게 한다.
         /// </summary>
-        private void BuildBossPortalAndKey(Dictionary<Vector2Int, DungeonRoom> roomsByCell)
+        private void BuildBossPortalAndKey()
         {
             DungeonLayoutRoom keyRoom = LockPortalWithKey ? Layout.KeyRoom : null;
 
-            float portalSize = TileSize * 1.5f;
+            const float portalSize = 3f;
             GameObject portalObject = CreateTriggerZone("BossPortal", _bossGateRoom.transform, Vector3.zero, portalSize);
             GameObject portalVisual = CreateMarker("Visual", portalObject.transform, Vector3.zero, BossGateColor);
             portalVisual.transform.localScale = new Vector3(portalSize, 0.02f, portalSize);
@@ -622,9 +561,10 @@ namespace TopDownBase.Dungeon
                 return;
             }
 
-            GameObject keyObject = CreateTriggerZone("Key", roomsByCell[keyRoom.Cell].transform, Vector3.zero, TileSize);
+            DungeonRoom room = _rooms[Layout.Rooms.IndexOf(keyRoom)];
+            GameObject keyObject = CreateTriggerZone("Key", room.transform, Vector3.zero, 2f);
             GameObject keyVisual = CreatePrimitive(PrimitiveType.Cube, "Visual", keyObject.transform,
-                new Vector3(0f, 1f, 0f), Vector3.one * (TileSize * 0.35f), KeyColor, false);
+                new Vector3(0f, 1f, 0f), Vector3.one * 0.7f, KeyColor, false);
             keyVisual.transform.localRotation = Quaternion.Euler(45f, 45f, 0f);
 
             _keyPickup = keyObject.AddComponent<DungeonKeyPickup>();
@@ -645,103 +585,66 @@ namespace TopDownBase.Dungeon
             return zone;
         }
 
-        // ---------- 주변 환경 ----------
+        // ---------- 입구 잠금 ----------
 
         /// <summary>
-        /// 던전 아래에 바닥을 깔고, 방이 없는 칸과 외곽 칸에 환경 프리팹을 흩어 놓는다.
-        /// 환경은 길 찾기와 무관하므로 NavMesh 빌드에서 제외한다.
+        /// 입구마다 잠금 오브젝트를 만들어 그 방의 문 차단물로 등록한다. 충돌 상자는 입구 칸을 모두 덮어 방을 완전히 막고,
+        /// NavMeshObstacle은 잠긴 동안 NavMesh에서도 길을 끊는다. 보이는 것은 입구 가운데의 낮은 벽이다.
         /// </summary>
-        private void BuildEnvironmentAround(Transform root, System.Random rng)
+        private void BuildGateObjects(Transform root)
         {
-            Transform environment = new GameObject("Environment").transform;
-            environment.SetParent(root, false);
-            environment.gameObject.AddComponent<NavMeshModifier>().ignoreFromBuild = true;
-
-            Vector2Int min = Layout.Rooms[0].Cell;
-            Vector2Int max = min;
-            foreach (DungeonLayoutRoom room in Layout.Rooms)
-            {
-                min = Vector2Int.Min(min, room.Cell);
-                max = Vector2Int.Max(max, room.Cell);
-            }
-
-            min -= Vector2Int.one * EnvironmentBorderCells;
-            max += Vector2Int.one * EnvironmentBorderCells;
-
-            // 바닥 윗면을 방 바닥보다 살짝 낮춰 방 안에서는 보이지 않게 한다. 충돌체는 두지 않는다.
-            const float groundThickness = 0.1f;
-            Vector2 cellCount = new Vector2(max.x - min.x + 1, max.y - min.y + 1);
-            var groundCenter = new Vector3(
-                (min.x + max.x) * 0.5f * CellPitch.x,
-                -0.02f - groundThickness * 0.5f,
-                (min.y + max.y) * 0.5f * CellPitch.y);
-            CreateBox("Ground", environment, groundCenter,
-                new Vector3(cellCount.x * CellPitch.x, groundThickness, cellCount.y * CellPitch.y), GroundColor, false);
-
-            if (EnvironmentPrefabs == null || EnvironmentPrefabs.Length == 0)
+            if (!BuildGates)
             {
                 return;
             }
 
-            // 이웃 방의 벽에 파묻히지 않도록 칸 가장자리에서 띄우는 거리.
-            float edgeMargin = WallThickness + 1f;
-            Vector2 half = CellPitch * 0.5f - Vector2.one * edgeMargin;
+            Transform gates = new GameObject("Gates").transform;
+            gates.SetParent(root, false);
+            var countByRoom = new int[_rooms.Count];
 
-            for (int x = min.x; x <= max.x; x++)
+            foreach (WalkableEntrance entrance in Map.Entrances)
             {
-                for (int y = min.y; y <= max.y; y++)
-                {
-                    var cell = new Vector2Int(x, y);
-                    if (Layout.Contains(cell))
-                    {
-                        continue;
-                    }
+                var gate = new GameObject($"Gate_Room{entrance.RoomIndex}_{countByRoom[entrance.RoomIndex]++}");
+                gate.transform.SetParent(gates, false);
+                gate.transform.localPosition = ToLocal(entrance.Center);
+                // 로컬 z가 길 방향(Length), x가 길을 가로지르는 방향(Width)이다.
+                gate.transform.localRotation = Quaternion.LookRotation(new Vector3(entrance.Direction.x, 0f, entrance.Direction.y));
 
-                    // 바로 북쪽이 방이면 그 방 쪽 띠를 비워 카메라가 방 바닥을 볼 수 있게 한다.
-                    bool roomToTheNorth = Layout.Contains(cell + Vector2Int.up);
-                    float maxZ = half.y - (roomToTheNorth ? EnvironmentCameraClearance : 0f);
-                    if (half.x <= 0f || maxZ <= -half.y)
-                    {
-                        continue;
-                    }
+                var size = new Vector3(entrance.Width, GateHeight, entrance.Length);
+                var box = gate.AddComponent<BoxCollider>();
+                box.size = size;
+                box.center = new Vector3(0f, GateHeight * 0.5f, 0f);
 
-                    int count = rng.Next(EnvironmentPerCell.x, Mathf.Max(EnvironmentPerCell.x, EnvironmentPerCell.y) + 1);
-                    for (int i = 0; i < count; i++)
-                    {
-                        GameObject prefab = EnvironmentPrefabs[rng.Next(EnvironmentPrefabs.Length)];
-                        var offset = new Vector3(
-                            Mathf.Lerp(-half.x, half.x, (float)rng.NextDouble()),
-                            0f,
-                            Mathf.Lerp(-half.y, maxZ, (float)rng.NextDouble()));
-                        float yaw = (float)rng.NextDouble() * 360f;
-                        float scale = Mathf.Lerp(EnvironmentScale.x, Mathf.Max(EnvironmentScale.x, EnvironmentScale.y),
-                            (float)rng.NextDouble());
-                        if (prefab == null)
-                        {
-                            continue;
-                        }
+                var obstacle = gate.AddComponent<NavMeshObstacle>();
+                obstacle.shape = NavMeshObstacleShape.Box;
+                obstacle.size = size;
+                obstacle.center = box.center;
+                obstacle.carving = true;
 
-                        GameObject instance = Instantiate(prefab, environment);
-                        instance.name = prefab.name;
-                        instance.transform.localPosition = new Vector3(x * CellPitch.x, 0f, y * CellPitch.y) + offset;
-                        instance.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
-                        instance.transform.localScale = prefab.transform.localScale * scale;
-                    }
-                }
+                CreatePrimitive(PrimitiveType.Cube, "Visual", gate.transform,
+                    new Vector3(0f, GateVisualHeight * 0.5f, 0f),
+                    new Vector3(entrance.Width, GateVisualHeight, GateVisualThickness), GateColor, false);
+
+                gate.SetActive(false);
+                _rooms[entrance.RoomIndex].AddDoorBlocker(gate);
             }
         }
 
         // ---------- NavMesh ----------
 
-        private string BakeAndCheckNavMesh()
+        private NavMeshSurface GetNavMeshSurface()
         {
-            // 처음 한 번만 컴포넌트를 붙이고, 이후에는 저장된 참조를 쓴다.
             if (_navMeshSurface == null && !TryGetComponent(out _navMeshSurface))
             {
                 _navMeshSurface = gameObject.AddComponent<NavMeshSurface>();
             }
 
-            NavMeshSurface surface = _navMeshSurface;
+            return _navMeshSurface;
+        }
+
+        private string BakeAndCheckNavMesh()
+        {
+            NavMeshSurface surface = GetNavMeshSurface();
             surface.collectObjects = CollectObjects.Children;
             surface.useGeometry = NavMeshCollectGeometry.PhysicsColliders;
 
@@ -751,8 +654,7 @@ namespace TopDownBase.Dungeon
 
             if (!Application.isPlaying)
             {
-                // 편집 모드에서는 검사만 하고 데이터를 남기지 않는다. 남기면 저장 시 NavMesh가 씬 파일에 통째로 들어간다.
-                // Play 시작 시 항상 다시 굽는다.
+                // 편집 모드에서는 검사만 하고 데이터를 남기지 않는다. Play 시작 시 항상 다시 굽는다.
                 ReleaseNavMeshData(surface);
                 report += " (edit mode: checked, not kept)";
             }
@@ -772,6 +674,7 @@ namespace TopDownBase.Dungeon
             }
         }
 
+        /// <summary>시작 방에서 모든 방·열쇠·포털까지 길이 이어지는지, 스폰 위치가 NavMesh 위에 있는지 센다.</summary>
         private string CheckNavMesh()
         {
             if (StartRoom == null || BossGateRoom == null)
@@ -779,16 +682,25 @@ namespace TopDownBase.Dungeon
                 return "built, start/boss room missing";
             }
 
-            float sampleRange = TileSize * 2f;
-            if (!NavMesh.SamplePosition(StartRoom.transform.position, out NavMeshHit startHit, sampleRange, NavMesh.AllAreas)
-                || !NavMesh.SamplePosition(BossGateRoom.transform.position, out NavMeshHit bossHit, sampleRange, NavMesh.AllAreas))
+            if (!NavMesh.SamplePosition(StartRoom.transform.position, out NavMeshHit startHit, 2f, NavMesh.AllAreas))
             {
-                Debug.LogWarning("[Dungeon] 시작 방 또는 보스 입구가 NavMesh 위에 있지 않습니다.", this);
-                return "start/boss not on navmesh";
+                Debug.LogWarning("[Dungeon] 시작 방이 NavMesh 위에 있지 않습니다.", this);
+                return "start not on navmesh";
             }
 
-            var path = new NavMeshPath();
-            NavMesh.CalculatePath(startHit.position, bossHit.position, NavMesh.AllAreas, path);
+            int reachable = 0;
+            foreach (DungeonRoom room in _rooms)
+            {
+                if (IsReachable(startHit.position, room.transform.position))
+                {
+                    reachable++;
+                }
+            }
+
+            bool bossReachable = IsReachable(startHit.position, BossGateRoom.transform.position);
+            string keyReport = _keyPickup == null
+                ? "none"
+                : IsReachable(startHit.position, _keyPickup.transform.position) ? "reachable" : "unreachable";
 
             int offMeshSpawns = 0;
             int totalSpawns = 0;
@@ -797,87 +709,90 @@ namespace TopDownBase.Dungeon
                 foreach (Transform spawn in room.EnemySpawnPoints)
                 {
                     totalSpawns++;
-                    if (!NavMesh.SamplePosition(spawn.position, out _, TileSize * 0.5f, NavMesh.AllAreas))
+                    if (!NavMesh.SamplePosition(spawn.position, out _, 0.5f, NavMesh.AllAreas))
                     {
                         offMeshSpawns++;
                     }
                 }
             }
 
-            return $"path start→boss {path.status}, enemy spawns on mesh {totalSpawns - offMeshSpawns}/{totalSpawns}";
+            if (reachable < _rooms.Count || !bossReachable || keyReport == "unreachable" || offMeshSpawns > 0)
+            {
+                Debug.LogWarning("[Dungeon] NavMesh 검사에서 이어지지 않은 곳이 있습니다. " +
+                                 "ObstacleMargin과 PathWidth가 에이전트 크기에 맞는지 확인하세요.", this);
+            }
+
+            return $"rooms reachable {reachable}/{_rooms.Count}, boss {(bossReachable ? "reachable" : "unreachable")}, " +
+                   $"key {keyReport}, enemy spawns on mesh {totalSpawns - offMeshSpawns}/{totalSpawns}";
+        }
+
+        private static bool IsReachable(Vector3 from, Vector3 to)
+        {
+            var path = new NavMeshPath();
+            return NavMesh.SamplePosition(to, out NavMeshHit hit, 2f, NavMesh.AllAreas)
+                   && NavMesh.CalculatePath(from, hit.position, NavMesh.AllAreas, path)
+                   && path.status == NavMeshPathStatus.PathComplete;
         }
 
         // ---------- 도우미 ----------
 
-        /// <summary>방 안 칸 좌표를 방 기준 위치로 바꾼다. (0,0)은 남서쪽 구석 칸이다.</summary>
-        private Vector3 TileToLocal(Vector2Int tile)
+        private bool IsOccluded(Vector3 point, Vector3 towardCamera, float maxDistance)
         {
-            return new Vector3(
-                (tile.x + 0.5f) * TileSize - InteriorSize.x * 0.5f,
-                0f,
-                (tile.y + 0.5f) * TileSize - InteriorSize.y * 0.5f);
-        }
-
-        private static Vector2Int StampSize(Vector2Int[] stamp)
-        {
-            int width = 0;
-            int height = 0;
-            foreach (Vector2Int offset in stamp)
+            var ray = new Ray(point, towardCamera);
+            foreach (Collider obstacle in _obstacleColliders)
             {
-                width = Mathf.Max(width, offset.x + 1);
-                height = Mathf.Max(height, offset.y + 1);
-            }
-
-            return new Vector2Int(width, height);
-        }
-
-        /// <summary>가로 또는 세로로 minDistance칸 이상 떨어져 있으면 충분히 먼 것으로 본다.</summary>
-        private static bool IsFarFromAll(Vector2Int tile, List<Vector2Int> others, int minDistance)
-        {
-            foreach (Vector2Int other in others)
-            {
-                if (Mathf.Abs(tile.x - other.x) < minDistance && Mathf.Abs(tile.y - other.y) < minDistance)
+                if (obstacle.Raycast(ray, out _, maxDistance))
                 {
-                    return false;
+                    return true;
                 }
             }
 
-            return true;
+            return IsOccludedByBoundary(point, towardCamera, maxDistance);
         }
 
-        private static void Shuffle(List<Vector2Int> list, System.Random rng)
+        /// <summary>
+        /// 생성물 수를 세고, 편집 모드에서는 저장 대상에서 뺀다.
+        /// Play 중의 오브젝트는 원래 저장되지 않으므로 표시하지 않는다.
+        /// </summary>
+        private static int CountAndFlag(Transform node)
         {
-            for (int i = list.Count - 1; i > 0; i--)
+            if (!Application.isPlaying)
             {
-                int j = rng.Next(i + 1);
-                (list[i], list[j]) = (list[j], list[i]);
+                node.gameObject.hideFlags = HideFlags.DontSave;
             }
-        }
 
-        private Color RoleColor(DungeonRoomRole role)
-        {
-            switch (role)
+            int count = 1;
+            for (int i = 0; i < node.childCount; i++)
             {
-                case DungeonRoomRole.Start: return StartColor;
-                case DungeonRoomRole.Item: return ItemColor;
-                case DungeonRoomRole.BossGate: return BossGateColor;
-                default: return EnemyColor;
+                count += CountAndFlag(node.GetChild(i));
             }
+
+            return count;
         }
 
-        private GameObject CreateBox(string objectName, Transform parent, Vector3 localPosition, Vector3 size,
-            Color color, bool keepCollider)
+        private static Vector3 ToLocal(Vector2 mapPosition)
         {
-            return CreatePrimitive(PrimitiveType.Cube, objectName, parent, localPosition, size, color, keepCollider);
+            return new Vector3(mapPosition.x, 0f, mapPosition.y);
         }
 
-        /// <summary>충돌 없는 납작한 원판. 스폰·아이템·보스 입구 위치를 눈으로 확인하는 용도다.</summary>
+        private Vector3 ToWorld(Vector2 mapPosition)
+        {
+            return transform.TransformPoint(ToLocal(mapPosition));
+        }
+
+        /// <summary>Clear에서 함께 지울 런타임 생성 에셋(머티리얼, 메시, 지형 데이터 등)을 등록한다.</summary>
+        private T Track<T>(T asset) where T : Object
+        {
+            _createdAssets.Add(asset);
+            return asset;
+        }
+
+        /// <summary>충돌 없는 납작한 원판. 스폰·아이템·시작 위치를 눈으로 확인하는 용도다.</summary>
         private GameObject CreateMarker(string objectName, Transform parent, Vector3 localPosition, Color color)
         {
             localPosition.y = 0.03f;
-            float diameter = TileSize * 0.7f;
             return CreatePrimitive(PrimitiveType.Cylinder, objectName, parent, localPosition,
-                new Vector3(diameter, 0.02f, diameter), color, false);
+                new Vector3(MarkerDiameter, 0.02f, MarkerDiameter), color, false);
         }
 
         private GameObject CreatePrimitive(PrimitiveType type, string objectName, Transform parent,
@@ -897,12 +812,11 @@ namespace TopDownBase.Dungeon
 
             var meshRenderer = primitive.GetComponent<MeshRenderer>();
             meshRenderer.sharedMaterial = GetMaterial(color, meshRenderer.sharedMaterial);
-
             return primitive;
         }
 
-        /// <summary>같은 색은 머티리얼 하나를 함께 쓴다. 한 번 생성에 만들어지는 머티리얼은 색 종류 수(10개 안팎)다.</summary>
-        private Material GetMaterial(Color color, Material primitiveDefault)
+        /// <summary>같은 색은 머티리얼 하나를 함께 쓴다.</summary>
+        private Material GetMaterial(Color color, Material fallback)
         {
             if (_materialsByColor.TryGetValue(color, out Material cached) && cached != null)
             {
@@ -917,7 +831,7 @@ namespace TopDownBase.Dungeon
 
             if (source == null)
             {
-                source = primitiveDefault;
+                source = fallback;
             }
 
             if (source == null)
@@ -927,7 +841,7 @@ namespace TopDownBase.Dungeon
                 return null;
             }
 
-            var material = new Material(source) { name = $"Dungeon_{ColorUtility.ToHtmlStringRGB(color)}" };
+            var material = Track(new Material(source) { name = $"Dungeon_{ColorUtility.ToHtmlStringRGB(color)}" });
             if (material.HasProperty(BaseColorId))
             {
                 material.SetColor(BaseColorId, color);
@@ -939,7 +853,6 @@ namespace TopDownBase.Dungeon
             }
 
             _materialsByColor[color] = material;
-            _generatedMaterials.Add(material);
             return material;
         }
     }

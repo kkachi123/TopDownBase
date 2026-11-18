@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace TopDownBase.Dungeon.Experiments
+namespace TopDownBase.Dungeon
 {
-    /// <summary>방의 모양. Rectangle은 현재 던전과 같은 직사각형, Clearing은 크기와 윤곽이 흔들리는 공터다.</summary>
+    /// <summary>방의 모양. Rectangle은 직사각형, Clearing은 크기와 윤곽이 흔들리는 공터다.</summary>
     public enum WalkableShape
     {
         Rectangle,
@@ -55,6 +55,28 @@ namespace TopDownBase.Dungeon.Experiments
         public int RoomIndex;
     }
 
+    public struct WalkableSpawn
+    {
+        public Vector2 Position;
+        public int RoomIndex;
+    }
+
+    /// <summary>적 스폰 위치를 고르는 규칙. 거리는 모두 유닛이다.</summary>
+    [Serializable]
+    public struct WalkableSpawnSettings
+    {
+        /// <summary>전투 방마다 놓을 스폰 위치 수 (최소, 최대).</summary>
+        public Vector2Int Count;
+        /// <summary>경계에서 띄우는 거리.</summary>
+        public float EdgeMargin;
+        /// <summary>입구 상자에서 띄우는 거리. 방에 들어서자마자 적과 겹치지 않게 한다.</summary>
+        public float EntranceClearance;
+        /// <summary>장애물 가장자리에서 띄우는 거리.</summary>
+        public float ObstacleClearance;
+        /// <summary>스폰 위치 사이의 최소 거리.</summary>
+        public float Spacing;
+    }
+
     /// <summary>
     /// 길이 방(공터)에 닿는 곳 하나. 방에 붙은 길 칸들을 이어진 덩어리로 묶은 것이다.
     /// 이 칸들을 모두 막으면 그 방에서 길로 나갈 수 없다.
@@ -102,6 +124,8 @@ namespace TopDownBase.Dungeon.Experiments
         public readonly List<WalkableRoom> Rooms = new List<WalkableRoom>();
         public readonly List<WalkableObstacle> Obstacles = new List<WalkableObstacle>();
         public readonly List<WalkableEntrance> Entrances = new List<WalkableEntrance>();
+        /// <summary>PlaceEnemySpawns를 부른 뒤에 채워진다.</summary>
+        public readonly List<WalkableSpawn> EnemySpawns = new List<WalkableSpawn>();
         public WalkableRoom StartRoom { get; private set; }
         public WalkableRoom BossRoom { get; private set; }
         public int WalkableCellCount { get; private set; }
@@ -413,6 +437,93 @@ namespace TopDownBase.Dungeon.Experiments
             }
         }
 
+        // ---------- 적 스폰 ----------
+
+        /// <summary>
+        /// 전투 방마다 적 스폰 위치를 고른다. 경계·입구·장애물에서 떨어지고 서로도 떨어진 칸의 중심이다.
+        /// 맵 생성과 다른 난수를 받아, 스폰 규칙을 바꿔도 방 모양과 장애물은 그대로 유지된다.
+        /// </summary>
+        public void PlaceEnemySpawns(WalkableSpawnSettings settings, System.Random rng)
+        {
+            EnemySpawns.Clear();
+            var candidatesByRoom = new List<Vector2>[Rooms.Count];
+
+            for (int x = 0; x < Width; x++)
+            {
+                for (int y = 0; y < Height; y++)
+                {
+                    int owner = Owner[x, y];
+                    if (owner < 0 || Rooms[owner].Data.Role != DungeonRoomRole.Combat
+                        || Clearance[x, y] - 0.5f < settings.EdgeMargin)
+                    {
+                        continue;
+                    }
+
+                    Vector2 position = CellCenter(x, y);
+                    if (IsNearEntrance(position, settings.EntranceClearance)
+                        || IsInsideObstacle(position, settings.ObstacleClearance))
+                    {
+                        continue;
+                    }
+
+                    if (candidatesByRoom[owner] == null)
+                    {
+                        candidatesByRoom[owner] = new List<Vector2>();
+                    }
+
+                    candidatesByRoom[owner].Add(position);
+                }
+            }
+
+            int countMin = Mathf.Max(0, Mathf.Min(settings.Count.x, settings.Count.y));
+            int countMax = Mathf.Max(settings.Count.x, settings.Count.y);
+            foreach (WalkableRoom room in Rooms)
+            {
+                List<Vector2> candidates = candidatesByRoom[room.Index];
+                if (candidates == null)
+                {
+                    continue;
+                }
+
+                for (int i = candidates.Count - 1; i > 0; i--)
+                {
+                    int j = rng.Next(i + 1);
+                    (candidates[i], candidates[j]) = (candidates[j], candidates[i]);
+                }
+
+                int count = rng.Next(countMin, countMax + 1);
+                int firstIndex = EnemySpawns.Count;
+                foreach (Vector2 position in candidates)
+                {
+                    if (EnemySpawns.Count - firstIndex >= count)
+                    {
+                        break;
+                    }
+
+                    bool tooClose = false;
+                    for (int i = firstIndex; i < EnemySpawns.Count; i++)
+                    {
+                        if ((EnemySpawns[i].Position - position).sqrMagnitude < settings.Spacing * settings.Spacing)
+                        {
+                            tooClose = true;
+                            break;
+                        }
+                    }
+
+                    if (!tooClose)
+                    {
+                        EnemySpawns.Add(new WalkableSpawn { Position = position, RoomIndex = room.Index });
+                    }
+                }
+            }
+        }
+
+        /// <summary>위치가 들어 있는 방의 번호. 길이나 막힌 칸, 맵 밖이면 -1.</summary>
+        public int RoomIndexAt(Vector2 position)
+        {
+            return TryGetCell(position, out int x, out int y) ? Mathf.Max(Owner[x, y], -1) : -1;
+        }
+
         // ---------- 입구 ----------
 
         /// <summary>
@@ -535,7 +646,7 @@ namespace TopDownBase.Dungeon.Experiments
             entrance.Width = sideMax - sideMin + cellReach * 2f;
         }
 
-        private bool IsNearEntrance(Vector2 position, float margin)
+        public bool IsNearEntrance(Vector2 position, float margin)
         {
             foreach (WalkableEntrance entrance in Entrances)
             {

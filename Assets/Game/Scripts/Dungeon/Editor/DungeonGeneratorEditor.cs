@@ -1,6 +1,5 @@
 using System;
 using UnityEditor;
-using UnityEditor.SceneManagement;
 using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -10,6 +9,7 @@ namespace TopDownBase.Dungeon.Editor
     /// <summary>
     /// DungeonGenerator 인스펙터. 기본 필드 아래에 맵 생성 버튼과 현재 상태 안내를 붙인다.
     /// Play를 누르지 않고도 편집 모드에서 맵을 만들고 지울 수 있다.
+    /// 생성물은 씬에 저장되지 않으므로 씬을 변경된 것으로 표시하지 않는다.
     /// </summary>
     [CustomEditor(typeof(DungeonGenerator))]
     public class DungeonGeneratorEditor : UnityEditor.Editor
@@ -88,16 +88,10 @@ namespace TopDownBase.Dungeon.Editor
 
         private void Run(Action<DungeonGenerator> action)
         {
-            DungeonGenerator generator = Generator;
-            action(generator);
+            action(Generator);
 
-            if (!Application.isPlaying)
-            {
-                // 생성물과 바뀐 시드가 씬 저장 대상임을 에디터에 알린다. 되돌리기(Undo)는 지원하지 않는다.
-                EditorUtility.SetDirty(generator);
-                EditorSceneManager.MarkSceneDirty(generator.gameObject.scene);
-            }
-
+            // 무작위 시드로 생성하면 Seed 필드가 바뀐다. 인스펙터 표시만 맞춘다.
+            // 생성물은 저장 대상이 아니므로 씬을 변경된 것으로 표시하지 않는다(바뀐 시드도 저장되지 않는다).
             serializedObject.Update();
             Refresh();
         }
@@ -173,33 +167,27 @@ namespace TopDownBase.Dungeon.Editor
                 _status.text = "생성된 맵이 없습니다.";
                 _status.messageType = HelpBoxMessageType.Info;
             }
-            else if (!string.IsNullOrEmpty(generator.LastReport))
+            else
             {
                 _status.text = generator.LastReport;
                 bool unmet = generator.Layout != null && !generator.Layout.MeetsRequirements;
                 _status.messageType = unmet ? HelpBoxMessageType.Warning : HelpBoxMessageType.Info;
             }
-            else
-            {
-                _status.text = $"씬에 저장된 맵이 있습니다. 방 {generator.Rooms.Count}개, 시드 {generator.Seed}.";
-                _status.messageType = HelpBoxMessageType.Info;
-            }
 
             RefreshPortal(generator, hasMap);
 
+            const string notSaved = " 편집 모드에서 만든 맵은 씬에 저장되지 않으며, Play 진입이나 스크립트 재컴파일 때 사라집니다.";
             if (!generator.GenerateOnAwake)
             {
-                _playBehaviour.text = hasMap
-                    ? "Play 시: 씬에 있는 맵을 그대로 사용합니다. NavMesh만 다시 빌드합니다."
-                    : "Play 시: 맵을 생성하지 않습니다. 먼저 위 버튼으로 맵을 만들어 두세요.";
+                _playBehaviour.text = "Play 시: 맵을 생성하지 않습니다. 스크립트에서 Generate를 불러야 합니다." + notSaved;
             }
             else if (generator.RandomizeSeedOnAwake)
             {
-                _playBehaviour.text = "Play 시: 새 시드로 다시 생성합니다. 지금 보이는 맵은 대체됩니다.";
+                _playBehaviour.text = "Play 시: 새 시드로 생성합니다." + notSaved;
             }
             else
             {
-                _playBehaviour.text = $"Play 시: 시드 {generator.Seed}로 다시 생성합니다. 같은 시드는 같은 맵을 만듭니다.";
+                _playBehaviour.text = $"Play 시: 시드 {generator.Seed}로 생성합니다. 같은 시드는 같은 맵을 만듭니다." + notSaved;
             }
         }
     }

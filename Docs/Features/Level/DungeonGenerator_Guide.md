@@ -101,11 +101,18 @@ navmesh rooms reachable 12/12, boss reachable, key reachable, enemy spawns on me
 | --- | --- |
 | `Forest` (확인용 씬 기본) | 갈색 바위·풀·청록과 보라 버섯 모양 나무. 3단계까지의 모습과 같다 |
 | `PineHighland` | 침엽수·활엽수·단풍·마른 나무, 잎 식물, 이끼 바위, 회녹색 바위. 언덕이 조금 더 높다 |
+| `Ruins` | 폐허 요새. 회색으로 보정한 석재 블록, 마른 나무. 랜드마크: 부서진 탑·감시탑·벽돌 요새. 장애물: 석재 블록·제단 |
+| `Desert` | 사막 협곡. 모래 지면, 높은 언덕, 바위·선인장·야자. 랜드마크: 제단·모래 언덕 |
+| `TrialCourse` | 시련장. 주황 길, 청록 땅, 원색 나무·청록 돌·표지판. 장애물: 가시 롤러·가시공·지뢰·상자·회전 칼날(피해 없음). 문: 결승선 게이트 |
+| `ColosseumOutskirts` | 콜로세움 외곽. Colosseum 지면 색(갈색 공터, 녹색 바깥), 바위·마른 풀·상자. 랜드마크: 벽돌 요새·탑·제단. 문: START 게이트(채도 낮춤) |
+| `TropicalCoast` | 열대 해안. 모래 공터, 야자·바나나 나무, 잎 식물. 랜드마크: 감시탑·탑. 장애물: 바위·덤불·화물 상자 |
+| `DeadMarsh` | 고사목 늪. 어두운 지면, 마른 나무 위주, 어둡게 보정한 바위. 랜드마크: 어둡게 보정한 탑·감시탑 |
 
-- 소품·장애물은 목록의 항목마다 **가중치(`Weight`), 크기 배율(`Scale`), 곱할 색(`Tint`)**을 따로 정한다. 프리팹마다 원래 크기와 색이 달라 같은 목록 안에서도 맞춰야 하기 때문이다.
+- 소품·장애물은 목록의 항목마다 **가중치(`Weight`), 크기 배율(`Scale`), 곱할 색(`Tint`), 회색으로 옮기는 정도(`Desaturate`)**를 따로 정한다. 프리팹마다 원래 크기와 색이 달라 같은 목록 안에서도 맞춰야 하기 때문이다.
 - `Tint`는 원본 머티리얼을 바꾸지 않고 사본에 곱한다. 후처리(채도 +44)로 형광처럼 보이는 연두를 차분하게 하는 등 색 보정에 쓴다. 곱하는 방식이라 색을 어둡게·덜 선명하게만 할 수 있다.
+- `Desaturate`는 곱하기 전에 원래 색을 회색 쪽으로 옮긴다. 1이면 회색이 되고, 거기에 `Tint`를 곱해 원하는 색을 입힌다. 초록 블록(`Grass_3~8`)을 석재로, 원색 게이트를 바랜 색으로 바꾸는 데 쓴다. 머티리얼 색에만 적용되고 텍스처 색(`Tree_1~3` 등)에는 적용되지 않는다.
 - 지면은 색만 정하거나, 텍스처(`GroundTexture`, `ClearingTexture`)를 넣고 색을 곱할 수 있다.
-- 문 모양(`GatePrefab`)을 넣으면 입구 폭에 맞춰 옆으로 늘여 쓴다. 비어 있으면 빨간 상자다. 충돌은 모양과 상관없다.
+- 문 모양(`GatePrefab`)을 넣으면 입구 폭에 맞춰 옆으로 늘여 쓴다. 폭이 z 방향인 프리팹(START·결승선 게이트)은 `GateRotation` y를 90으로 둔다. 색은 `GateTint`·`GateDesaturate`로 보정한다. 비어 있으면 빨간 상자다. 충돌은 모양과 상관없다.
 - 후처리는 에셋에 없다. 씬의 Global Volume이 맡는다(2026-11-18 개발자 결정).
 - 새 환경은 Project 창에서 **Create > TopDownBase > Dungeon Environment**로 만들거나 기존 에셋을 복제한다.
 - `Environment`가 비어 있으면 소품 없이 기본 색 지면만 만든다.
@@ -116,7 +123,15 @@ navmesh rooms reachable 12/12, boss reachable, key reachable, enemy spawns on me
 - 가장자리에는 낮은 소품(`LowProps`: 바위, 풀)만 쓴다. 키 큰 소품(`TallProps`: 나무)은 그 바깥에 놓되, **북쪽 가까이에 공터나 길이 있으면 놓지 않는다.** 카메라가 남쪽에서 내려다보므로 그 자리의 나무가 바닥을 가리기 때문이다. 거리는 소품 높이와 `CameraPitch`로 계산하고 `CameraClearance`보다 짧아지지 않는다.
 - **`DungeonPrototype` 씬의 조명은 그림자를 끈다.** 따라가는 카메라가 대상에서 80유닛 떨어져 있어 화면 전체가 URP 에셋의 그림자 거리(50) 밖이라, 켜 두면 그림자는 보이지 않고 그리는 비용만 든다. 그림자를 보이게 하려면 그림자 거리를 100 정도로 늘리고 단계를 1로 줄인다(PineHighland 기준 DrawCall 201). 측정은 [자연환경 과정](NatureEnvironment/Process.md)의 그림자 설정 측정.
 - **소품은 GameObject 없이 묶어 그린다(`PropRendering` = `Instanced`).** 카메라마다 화면 안(그림자 여유 `ShadowCullPadding` 포함)의 소품만 골라 프리팹 종류마다 `Graphics.RenderMeshInstanced`로 한 번에 그린다. DrawCall은 소품 수가 아니라 (프리팹, 색) 종류 수에 비례한다. `Forest`(9종)는 따라가는 화면 96, `PineHighland`(18종)는 154다(그림자 끔 기준). 프리팹은 루트에 메시 하나가 있는 형태여야 하며, 아니면 경고를 남기고 건너뛴다. `GameObjects`로 바꾸면 소품마다 오브젝트를 만든다(비교용).
-- 소품 머티리얼은 인스턴싱을 켠(필요하면 색을 곱한) 사본을 만들어 쓴다. 원본 에셋은 바꾸지 않는다.
+- 소품 머티리얼은 인스턴싱을 켠(필요하면 색을 보정한) 사본을 만들어 쓴다. 원본 에셋은 바꾸지 않는다.
+- 머티리얼이 여러 개인 프리팹은 종류 하나가 머티리얼 수만큼 DrawCall을 쓴다(건물 3~5개, 표지판 4개, 야자 4개). DrawCall이 기준을 넘으면 이런 종류부터 줄인다.
+- 가려지는 바닥은 대부분 가장자리 첫 줄의 낮은 소품에서 나온다(`Forest`: 소품을 모두 빼면 3.1%, 낮은 소품만 빼면 4.0%). 표지판처럼 높거나 폭이 넓은 낮은 소품은 크기를 줄이거나 드물게 둔다.
+
+### 랜드마크
+
+- 건물처럼 크고 드문 소품은 `Landmarks`에 넣는다. 방 하나당 `LandmarksPerRoom`개를 목표로, 막힌 칸을 무작위 순서로 훑어 놓을 수 있는 자리에만 놓는다.
+- 자리 조건: 바닥 원(모서리까지 감싸는 반지름)이 걸을 수 있는 영역에서 `LandmarkClearance` 이상, 다른 랜드마크와 `LandmarkSpacing` 이상 떨어지고, 맵 안에 들어가며, 북쪽으로 꼭대기가 바닥을 가리는 거리 안에 공터나 길이 없어야 한다.
+- 랜드마크 자리(바닥 원 + 1유닛)에는 다른 소품을 놓지 않는다. 랜드마크는 별도 난수를 쓰므로 랜드마크가 없는 환경의 소품 배치는 이전과 같다.
 
 ### 장애물
 
@@ -231,11 +246,14 @@ Game 창을 한 번 클릭해 포커스를 줘야 키가 들어간다. 하늘색
 | | `EdgeBlend` | 1.2 | 흙과 풀이 섞이는 폭(유닛) |
 | | `GroundColor` / `ClearingColor` | 풀색 / 흙색 | 지면 색. 텍스처가 있으면 곱한다 |
 | | `GroundTexture` / `ClearingTexture` / `TextureTileSize` | 없음 / 없음 / 4 | 지면 텍스처와 한 장이 덮는 크기 |
-| Props | `LowProps` / `TallProps` | — | 가장자리 소품 / 바깥 소품. 항목마다 `Prefab`, `Weight`, `Tint`, `Scale` |
+| Props | `LowProps` / `TallProps` | — | 가장자리 소품 / 바깥 소품. 항목마다 `Prefab`, `Weight`, `Tint`, `Desaturate`, `Scale` |
 | | `EdgeDepth` / `EdgeDensity` / `RimDensity` / `FillDensity` | 2 / 0.55 / 0.85 / 0.07 | 가장자리 깊이와 밀도 |
 | | `PropsCastShadows` / `LowPropsCastShadows` | 켬 / 끔 | 그림자. 조명 그림자를 켤 때만 의미가 있다(`DungeonPrototype`은 꺼 둠) |
-| Obstacles | `Obstacles` | — | 장애물 모양. 항목마다 `Prefab`, `Weight`, `Tint`, `Diameter`. 비우면 원기둥 |
-| Gates | `GatePrefab` / `GatePrefabWidth` | 없음 / 2 | 문 모양과 그 원래 폭. 비우면 빨간 상자 |
+| Landmarks | `Landmarks` | — | 크고 드문 소품. 항목은 `LowProps`와 같다 |
+| | `LandmarksPerRoom` / `LandmarkSpacing` / `LandmarkClearance` | 0.5 / 6 / 1.5 | 방당 목표 수, 랜드마크끼리 간격, 걸을 수 있는 영역과 간격(유닛) |
+| Obstacles | `Obstacles` | — | 장애물 모양. 항목마다 `Prefab`, `Weight`, `Tint`, `Desaturate`, `Diameter`. 비우면 원기둥 |
+| Gates | `GatePrefab` / `GatePrefabWidth` | 없음 / 2 | 문 모양과 그 원래 폭(회전한 뒤 입구를 가로지르는 방향). 비우면 빨간 상자 |
+| | `GateRotation` / `GateTint` / `GateDesaturate` | 0 / 흰색 / 0 | 문 프리팹 회전(도)과 색 보정 |
 
 ## 7. 코드에서 쓰기
 
@@ -355,7 +373,9 @@ DungeonGenerator            (DungeonGenerator, NavMeshSurface)
 - **빌드에서는 실행해 보지 않았다.** `BaseMaterial` 지정(렌더 파이프라인 기본 머티리얼은 에디터에서만 제공), Terrain 셰이더 포함 여부를 빌드 단계에서 확인해야 한다.
 - **생성에 100ms 안팎이 걸린다.** 대부분 Terrain 데이터와 NavMesh 빌드다. 한 판에 한 번 생성하는 용도로는 문제없는 수준이다.
 - **소품 프리팹은 루트에 메시 하나가 있어야 묶어 그린다.** 소품 메시의 Read/Write가 꺼져 있어도 된다.
-- **잠금 표시는 빨간 상자다.** 환경 에셋에 문 프리팹 슬롯이 있지만 아직 넣은 프리팹이 없다.
+- **잠금 표시는 환경마다 다르다.** `Forest`·`PineHighland`는 빨간 상자, 나머지 6개 환경은 석재 블록·게이트 등 문 프리팹을 쓴다.
+- **함정 모양 장애물(`TrialCourse`)은 피해를 주지 않는다.** 모양만 함정이고 충돌은 다른 장애물과 같은 기둥이다. 피해 판정은 플레이어·적 구현 뒤에 붙인다.
+- **이 환경들의 머티리얼 텍스처는 `Assets/@Asset/POLY STYLE`에 있다.** 외부 에셋 폴더라 Git에 없으므로, 설치하지 않은 환경에서는 텍스처를 쓰는 소품(`Tree_1~3`, `Hill_1~5` 등)이 텍스처 없이 보인다(확인하지 않음).
 - **씬을 넘어갈 때 상태를 옮기지 않는다.** 포털은 보스 씬을 불러오기만 한다.
 - **보스 씬은 임시로 `SampleScene`을 쓴다.** 투기장 규격과 보스 구성은 미확정이다.
 - **열쇠와 포털은 TopDown Engine의 `KeyOperatedZone`·`Teleporter`를 쓰지 않는다.** 엔진 기반 플레이어가 생기면 교체를 검토한다.

@@ -12,6 +12,8 @@ namespace TopDownBase.Dungeon
         [Min(0f)] public float Weight = 1f;
         [Tooltip("머티리얼 색에 곱하는 색. 흰색이면 원래 색 그대로다. 원본 머티리얼은 바꾸지 않고 사본에 입힌다.")]
         public Color Tint = Color.white;
+        [Tooltip("Tint를 곱하기 전에 원래 색을 회색 쪽으로 옮기는 정도. 1이면 회색이 된다. 곱하기만으로는 바꿀 수 없는 원색을 다른 색으로 보정할 때 쓴다. 텍스처의 색에는 적용되지 않는다.")]
+        [Range(0f, 1f)] public float Desaturate;
     }
 
     /// <summary>경계 소품 하나.</summary>
@@ -72,6 +74,16 @@ namespace TopDownBase.Dungeon
         [Tooltip("끄면 가장자리의 낮은 소품은 그림자를 드리우지 않는다. 그림자 단계마다 한 번씩 더 그리는 비용이 줄어든다.")]
         public bool LowPropsCastShadows;
 
+        [Header("Landmarks")]
+        [Tooltip("건물처럼 크고 드물게 놓는 소품. 서로, 그리고 공터·길과 간격을 두고 놓으며 그 자리에는 다른 소품을 놓지 않는다. 루트에 메시 하나가 있는 프리팹이어야 한다.")]
+        public DungeonPropEntry[] Landmarks = Array.Empty<DungeonPropEntry>();
+        [Tooltip("방 하나당 놓으려는 랜드마크 수. 놓을 자리가 모자라면 덜 놓인다.")]
+        [Min(0f)] public float LandmarksPerRoom = 0.5f;
+        [Tooltip("랜드마크끼리 바닥 가장자리 사이의 최소 거리(유닛).")]
+        [Min(0f)] public float LandmarkSpacing = 6f;
+        [Tooltip("랜드마크 바닥 가장자리와 걸을 수 있는 영역 사이의 최소 거리(유닛).")]
+        [Min(0f)] public float LandmarkClearance = 1.5f;
+
         [Header("Obstacles")]
         [Tooltip("전투 방 장애물의 모양. 비워 두면 원기둥을 쓴다.")]
         public DungeonObstacleVisual[] Obstacles = Array.Empty<DungeonObstacleVisual>();
@@ -79,7 +91,11 @@ namespace TopDownBase.Dungeon
         [Header("Gates")]
         [Tooltip("입구 잠금의 모양. 비워 두면 빨간 상자를 쓴다. 충돌은 프리팹과 상관없이 입구를 덮는 상자다.")]
         public GameObject GatePrefab;
-        [Tooltip("GatePrefab의 원래 폭(유닛). 입구 폭에 맞춰 옆으로 늘이는 데 쓴다.")]
+        [Tooltip("GatePrefab의 원래 폭(유닛). 입구 폭에 맞춰 옆으로 늘이는 데 쓴다. GateRotation으로 돌린 뒤 입구를 가로지르는 방향의 폭이다.")]
         [Min(0.1f)] public float GatePrefabWidth = 2f;
+        [Tooltip("GatePrefab의 회전(도). 입구 기준으로 x는 입구를 가로지르는 방향, z는 길 방향이다. 폭이 z 방향인 프리팹은 y를 90으로 둔다.")]
+        public Vector3 GateRotation;
+        public Color GateTint = Color.white;
+        [Range(0f, 1f)] public float GateDesaturate;
     }
 }

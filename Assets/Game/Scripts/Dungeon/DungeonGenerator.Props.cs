@@ -21,6 +21,7 @@ namespace TopDownBase.Dungeon
     public partial class DungeonGenerator
     {
         private const float OccluderBucketSize = 4f;
+        private const int LandmarkSeedSalt = 0x4C4D4B;
 
         private struct Occluder
         {
@@ -32,6 +33,8 @@ namespace TopDownBase.Dungeon
         private struct PrefabInfo
         {
             public float Radius;
+            /// <summary>바닥 사각형의 중심에서 모서리까지 거리. 어느 방향으로 돌려도 바닥이 이 원 안에 든다.</summary>
+            public float HalfDiagonal;
             public float Height;
             public bool HasColliders;
         }
@@ -44,6 +47,7 @@ namespace TopDownBase.Dungeon
             public float Scale;
             public bool IsTall;
             public Color Tint;
+            public float Desaturate;
         }
 
         /// <summary>같은 프리팹을 쓰는 소품 전체. 매 프레임 화면에 보이는 것만 Visible에 옮겨 한 번에 그린다.</summary>
@@ -63,14 +67,19 @@ namespace TopDownBase.Dungeon
         private readonly Dictionary<Vector2Int, List<Occluder>> _occluders = new Dictionary<Vector2Int, List<Occluder>>();
         private readonly List<PropPlacement> _placements = new List<PropPlacement>();
         private readonly List<InstanceGroup> _groups = new List<InstanceGroup>();
-        // (원본, 곱할 색, 인스턴싱)마다 만든 머티리얼 사본.
-        private readonly Dictionary<(Material, Color, bool), Material> _materialCopies = new Dictionary<(Material, Color, bool), Material>();
+        // (원본, 곱할 색, 회색으로 옮기는 정도, 인스턴싱)마다 만든 머티리얼 사본.
+        private readonly Dictionary<(Material, Color, float, bool), Material> _materialCopies = new Dictionary<(Material, Color, float, bool), Material>();
+        // 놓인 랜드마크의 바닥 원(x, z: 맵 좌표 중심, w: 반지름). 다른 소품이 그 안에 놓이지 않게 한다.
+        private readonly List<Vector3> _landmarkFootprints = new List<Vector3>();
         private readonly Plane[] _frustumPlanes = new Plane[6];
         private Bounds _propBounds;
         private bool _renderingHooked;
 
-        /// <summary>놓인 소품 수. 측정 기록용이다.</summary>
+        /// <summary>놓인 소품 수(랜드마크 포함). 측정 기록용이다.</summary>
         public int PropCount { get; private set; }
+
+        /// <summary>놓인 랜드마크 수. 측정 기록용이다.</summary>
+        public int LandmarkCount => _landmarkFootprints.Count;
 
         private void BuildProps(Transform root, System.Random rng)
         {
@@ -98,6 +107,7 @@ namespace TopDownBase.Dungeon
             _materialCopies.Clear();
             _occluders.Clear();
             _placements.Clear();
+            _landmarkFootprints.Clear();
             // 프리팹 크기는 인스펙터에서 바뀔 수 있으므로 생성마다 다시 읽는다.
             _prefabInfos.Clear();
             PropCount = 0;
@@ -107,8 +117,11 @@ namespace TopDownBase.Dungeon
         private void PlanProps(System.Random rng)
         {
             DungeonEnvironmentSettings env = Env;
+            // 랜드마크는 따로 만든 난수로 먼저 놓는다. 랜드마크가 없는 환경의 소품 배치는 이전과 같다.
+            PlanLandmarks(env);
             if (!HasChoice(env.LowProps) && !HasChoice(env.TallProps))
             {
+                PropCount = _placements.Count;
                 return;
             }
 
@@ -151,6 +164,12 @@ namespace TopDownBase.Dungeon
                         }
                     }
 
+                    // 랜드마크 자리에는 놓지 않는다. 난수는 위에서 이미 다 썼으므로 다른 칸의 배치는 달라지지 않는다.
+                    if (IsInsideLandmark(Map.CellCenter(x, y) + jitter, 1f))
+                    {
+                        continue;
+                    }
+
                     bool isTall = entry != null;
                     if (!isTall)
                     {
@@ -169,7 +188,8 @@ namespace TopDownBase.Dungeon
                         Yaw = yaw,
                         Scale = RollScale(entry, scaleRoll),
                         IsTall = isTall,
-                        Tint = entry.Tint
+                        Tint = entry.Tint,
+                        Desaturate = entry.Desaturate
                     };
                     _placements.Add(placement);
                     RegisterOccluder(placement);
@@ -177,6 +197,99 @@ namespace TopDownBase.Dungeon
             }
 
             PropCount = _placements.Count;
+        }
+
+        /// <summary>
+        /// 건물처럼 크고 드문 소품을 놓는다. 막힌 칸을 무작위 순서로 훑으며, 바닥 원이 공터·길에서 충분히 떨어져 있고
+        /// 다른 랜드마크와 간격이 있으며 북쪽 가까이에 걸을 수 있는 곳이 없는(카메라에서 바닥을 가리지 않는) 자리만 쓴다.
+        /// </summary>
+        private void PlanLandmarks(DungeonEnvironmentSettings env)
+        {
+            if (!HasChoice(env.Landmarks) || env.LandmarksPerRoom <= 0f)
+            {
+                return;
+            }
+
+            var rng = new System.Random(Seed ^ LandmarkSeedSalt);
+            int target = Mathf.RoundToInt(Map.Rooms.Count * env.LandmarksPerRoom);
+            var candidates = new List<Vector2Int>();
+            for (int x = 0; x < Map.Width; x++)
+            {
+                for (int y = 0; y < Map.Height; y++)
+                {
+                    if (!Map.IsWalkable(x, y) && Map.DistanceToWalkable[x, y] >= env.LandmarkClearance + 1f)
+                    {
+                        candidates.Add(new Vector2Int(x, y));
+                    }
+                }
+            }
+
+            for (int i = candidates.Count - 1; i > 0; i--)
+            {
+                int j = rng.Next(i + 1);
+                (candidates[i], candidates[j]) = (candidates[j], candidates[i]);
+            }
+
+            float tanPitch = Mathf.Tan(CameraPitch * Mathf.Deg2Rad);
+            foreach (Vector2Int cell in candidates)
+            {
+                if (_landmarkFootprints.Count >= target)
+                {
+                    break;
+                }
+
+                DungeonPropEntry entry = PickWeighted(env.Landmarks, rng);
+                float scale = RollScale(entry, (float)rng.NextDouble());
+                float yaw = (float)rng.NextDouble() * 360f;
+                PrefabInfo info = GetPrefabInfo(entry.Prefab);
+                // 무작위로 돌려 놓으므로 모서리까지 감싸는 원으로 간격을 잰다.
+                float radius = info.HalfDiagonal * scale;
+                Vector2 position = Map.CellCenter(cell.x, cell.y);
+
+                if (Map.DistanceToWalkable[cell.x, cell.y] < radius + env.LandmarkClearance
+                    || cell.x - radius < 0f || cell.y - radius < 0f
+                    || cell.x + radius > Map.Width || cell.y + radius > Map.Height
+                    || IsInsideLandmark(position, radius + env.LandmarkSpacing))
+                {
+                    continue;
+                }
+
+                // 바닥 원의 북쪽 끝부터 꼭대기가 바닥을 가리는 거리까지 걸을 수 있는 곳이 없어야 한다.
+                float shadowed = (info.Height * scale + env.HillHeight) / tanPitch + radius;
+                if (HasWalkableToTheNorth(cell.x, cell.y, Mathf.Max(CameraClearance, shadowed), Mathf.CeilToInt(radius) + 1))
+                {
+                    continue;
+                }
+
+                var placement = new PropPlacement
+                {
+                    Prefab = entry.Prefab,
+                    Position = position,
+                    Yaw = yaw,
+                    Scale = scale,
+                    IsTall = true,
+                    Tint = entry.Tint,
+                    Desaturate = entry.Desaturate
+                };
+                _placements.Add(placement);
+                RegisterOccluder(placement);
+                _landmarkFootprints.Add(new Vector3(position.x, position.y, radius));
+            }
+        }
+
+        /// <summary>점이 어떤 랜드마크의 바닥 원에서 margin 안쪽에 있는지.</summary>
+        private bool IsInsideLandmark(Vector2 position, float margin)
+        {
+            foreach (Vector3 footprint in _landmarkFootprints)
+            {
+                float reach = footprint.z + margin;
+                if ((position - new Vector2(footprint.x, footprint.y)).sqrMagnitude < reach * reach)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static float RollScale(DungeonPropEntry entry, float roll)
@@ -272,7 +385,7 @@ namespace TopDownBase.Dungeon
                 instance.transform.localPosition = GroundPoint(placement.Position);
                 instance.transform.localRotation = Quaternion.Euler(0f, placement.Yaw, 0f);
                 instance.transform.localScale = placement.Prefab.transform.localScale * placement.Scale;
-                ApplyTint(instance, placement.Tint);
+                ApplyTint(instance, placement.Tint, placement.Desaturate);
 
                 if (GetPrefabInfo(placement.Prefab).HasColliders)
                 {
@@ -291,10 +404,10 @@ namespace TopDownBase.Dungeon
         /// </summary>
         private void BuildInstanceGroups()
         {
-            // 같은 프리팹이라도 곱할 색이 다르면 머티리얼이 달라 따로 묶는다.
-            var matricesByPrefab = new Dictionary<(GameObject, Color), List<Matrix4x4>>();
-            var spheresByPrefab = new Dictionary<(GameObject, Color), List<Vector4>>();
-            var tallPrefabs = new HashSet<(GameObject, Color)>();
+            // 같은 프리팹이라도 색 보정이 다르면 머티리얼이 달라 따로 묶는다.
+            var matricesByPrefab = new Dictionary<(GameObject, Color, float), List<Matrix4x4>>();
+            var spheresByPrefab = new Dictionary<(GameObject, Color, float), List<Vector4>>();
+            var tallPrefabs = new HashSet<(GameObject, Color, float)>();
             var skipped = new HashSet<GameObject>();
             bool hasBounds = false;
 
@@ -311,7 +424,7 @@ namespace TopDownBase.Dungeon
                     continue;
                 }
 
-                var key = (placement.Prefab, placement.Tint);
+                var key = (placement.Prefab, placement.Tint, placement.Desaturate);
                 if (!matricesByPrefab.TryGetValue(key, out List<Matrix4x4> matrices))
                 {
                     matrices = new List<Matrix4x4>();
@@ -348,14 +461,14 @@ namespace TopDownBase.Dungeon
             }
 
             DungeonEnvironmentSettings env = Env;
-            foreach (KeyValuePair<(GameObject, Color), List<Matrix4x4>> entry in matricesByPrefab)
+            foreach (KeyValuePair<(GameObject, Color, float), List<Matrix4x4>> entry in matricesByPrefab)
             {
-                (GameObject prefab, Color tint) = entry.Key;
+                (GameObject prefab, Color tint, float desaturate) = entry.Key;
                 Material[] sources = prefab.GetComponent<MeshRenderer>().sharedMaterials;
                 var materials = new Material[sources.Length];
                 for (int i = 0; i < sources.Length; i++)
                 {
-                    materials[i] = GetMaterialCopy(sources[i], tint, true);
+                    materials[i] = GetMaterialCopy(sources[i], tint, desaturate, true);
                 }
 
                 _groups.Add(new InstanceGroup
@@ -377,17 +490,18 @@ namespace TopDownBase.Dungeon
         }
 
         /// <summary>
-        /// 원본 머티리얼의 사본. 인스턴싱을 켜거나 색을 곱할 때 쓴다. 원본 머티리얼 에셋은 건드리지 않는다.
-        /// 색을 곱하지 않고 인스턴싱도 필요 없으면 원본을 그대로 돌려준다.
+        /// 원본 머티리얼의 사본. 인스턴싱을 켜거나 색을 보정할 때 쓴다. 원본 머티리얼 에셋은 건드리지 않는다.
+        /// 색을 보정하지 않고 인스턴싱도 필요 없으면 원본을 그대로 돌려준다.
         /// </summary>
-        private Material GetMaterialCopy(Material source, Color tint, bool instancing)
+        private Material GetMaterialCopy(Material source, Color tint, float desaturate, bool instancing)
         {
-            if (source == null || (tint == Color.white && !instancing))
+            bool recolor = tint != Color.white || desaturate > 0f;
+            if (source == null || (!recolor && !instancing))
             {
                 return source;
             }
 
-            var key = (source, tint, instancing);
+            var key = (source, tint, desaturate, instancing);
             if (!_materialCopies.TryGetValue(key, out Material copy))
             {
                 copy = Track(new Material(source)
@@ -396,16 +510,16 @@ namespace TopDownBase.Dungeon
                     enableInstancing = instancing || source.enableInstancing
                 });
 
-                if (tint != Color.white)
+                if (recolor)
                 {
                     if (copy.HasProperty(BaseColorId))
                     {
-                        copy.SetColor(BaseColorId, copy.GetColor(BaseColorId) * tint);
+                        copy.SetColor(BaseColorId, Recolor(copy.GetColor(BaseColorId), tint, desaturate));
                     }
 
                     if (copy.HasProperty(ColorId))
                     {
-                        copy.SetColor(ColorId, copy.GetColor(ColorId) * tint);
+                        copy.SetColor(ColorId, Recolor(copy.GetColor(ColorId), tint, desaturate));
                     }
                 }
 
@@ -415,10 +529,17 @@ namespace TopDownBase.Dungeon
             return copy;
         }
 
-        /// <summary>오브젝트로 만든 소품·장애물의 머티리얼을 색을 곱한 사본으로 바꾼다.</summary>
-        private void ApplyTint(GameObject instance, Color tint)
+        /// <summary>원래 색을 회색 쪽으로 desaturate만큼 옮긴 뒤 tint를 곱한다. 둘 다 기본값이면 원래 색 그대로다.</summary>
+        private static Color Recolor(Color color, Color tint, float desaturate)
         {
-            if (tint == Color.white)
+            float luminance = color.r * 0.299f + color.g * 0.587f + color.b * 0.114f;
+            return Color.Lerp(color, new Color(luminance, luminance, luminance, color.a), desaturate) * tint;
+        }
+
+        /// <summary>오브젝트로 만든 소품·장애물·문의 머티리얼을 색을 보정한 사본으로 바꾼다.</summary>
+        private void ApplyTint(GameObject instance, Color tint, float desaturate)
+        {
+            if (tint == Color.white && desaturate <= 0f)
             {
                 return;
             }
@@ -428,7 +549,7 @@ namespace TopDownBase.Dungeon
                 Material[] materials = renderer.sharedMaterials;
                 for (int i = 0; i < materials.Length; i++)
                 {
-                    materials[i] = GetMaterialCopy(materials[i], tint, false);
+                    materials[i] = GetMaterialCopy(materials[i], tint, desaturate, false);
                 }
 
                 renderer.sharedMaterials = materials;
@@ -575,7 +696,7 @@ namespace TopDownBase.Dungeon
                 return info;
             }
 
-            info = new PrefabInfo { Radius = 0.5f, Height = 1f };
+            info = new PrefabInfo { Radius = 0.5f, HalfDiagonal = 0.71f, Height = 1f };
             Renderer[] renderers = prefab.GetComponentsInChildren<Renderer>(true);
             if (renderers.Length > 0)
             {
@@ -586,6 +707,7 @@ namespace TopDownBase.Dungeon
                 }
 
                 info.Radius = (bounds.extents.x + bounds.extents.z) * 0.5f;
+                info.HalfDiagonal = new Vector2(bounds.extents.x, bounds.extents.z).magnitude;
                 info.Height = bounds.max.y;
             }
 

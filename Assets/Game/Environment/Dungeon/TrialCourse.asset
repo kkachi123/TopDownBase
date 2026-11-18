@@ -1,0 +1,117 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9b9edf6ec8531634eab2bffd3d2454ec, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TopDownBase.Dungeon.DungeonEnvironmentSettings
+  HillHeight: 0.8
+  HillStart: 2.5
+  HillWidth: 4
+  HillNoiseScale: 12
+  EdgeBlend: 0.6
+  GroundColor: {r: 0.3, g: 0.62, b: 0.5, a: 1}
+  ClearingColor: {r: 0.82, g: 0.66, b: 0.48, a: 1}
+  GroundTexture: {fileID: 0}
+  ClearingTexture: {fileID: 0}
+  TextureTileSize: 4
+  LowProps:
+  - Prefab: {fileID: 677973159086646424, guid: 5a168e3699999ce4abfdf68b12c51d40, type: 3}
+    Weight: 1
+    Tint: {r: 1, g: 1, b: 1, a: 1}
+    Desaturate: 0
+    Scale: {x: 0.55, y: 0.85}
+  - Prefab: {fileID: 8760674994259095997, guid: cb37239f36521bc468a6322a1c1371f3, type: 3}
+    Weight: 1
+    Tint: {r: 1, g: 1, b: 1, a: 1}
+    Desaturate: 0
+    Scale: {x: 0.55, y: 0.85}
+  - Prefab: {fileID: 2158976189192330963, guid: 2cd86cdefb1654942bccff454fecdb1a, type: 3}
+    Weight: 1
+    Tint: {r: 1, g: 1, b: 1, a: 1}
+    Desaturate: 0
+    Scale: {x: 0.55, y: 0.85}
+  - Prefab: {fileID: 7307925345082077341, guid: bf772a49584ff8c4b920ac0f084658ea, type: 3}
+    Weight: 0.08
+    Tint: {r: 1, g: 1, b: 1, a: 1}
+    Desaturate: 0
+    Scale: {x: 0.6, y: 0.75}
+  - Prefab: {fileID: 2138183964518176031, guid: 238937c2717c9ab4b86a8dd6486046cf, type: 3}
+    Weight: 0.8
+    Tint: {r: 1, g: 1, b: 1, a: 1}
+    Desaturate: 0
+    Scale: {x: 0.6, y: 0.85}
+  TallProps:
+  - Prefab: {fileID: 774170419439871075, guid: e997e5bb7eeb0e44a96013a0e415d6c8, type: 3}
+    Weight: 1
+    Tint: {r: 1, g: 1, b: 1, a: 1}
+    Desaturate: 0
+    Scale: {x: 0.85, y: 1.15}
+  - Prefab: {fileID: 6683425011099793336, guid: e371314f4fb58214e84908a98d75da1b, type: 3}
+    Weight: 1
+    Tint: {r: 1, g: 1, b: 1, a: 1}
+    Desaturate: 0
+    Scale: {x: 1, y: 1.3}
+  - Prefab: {fileID: 4578069759007183627, guid: 1f3778ea4300342498a8c4065040269e, type: 3}
+    Weight: 0.7
+    Tint: {r: 1, g: 1, b: 1, a: 1}
+    Desaturate: 0
+    Scale: {x: 1.2, y: 1.6}
+  EdgeDepth: 2
+  EdgeDensity: 0.55
+  RimDensity: 0.85
+  FillDensity: 0.05
+  PropsCastShadows: 1
+  LowPropsCastShadows: 0
+  Landmarks:
+  - Prefab: {fileID: 4247961433165547972, guid: 07ecc428571bb3c44a8ba20ba2d03488, type: 3}
+    Weight: 1
+    Tint: {r: 1, g: 1, b: 1, a: 1}
+    Desaturate: 0
+    Scale: {x: 0.5, y: 0.65}
+  - Prefab: {fileID: 4580083936351734208, guid: cb3ddbf0215e75e418cf8cf83791a75a, type: 3}
+    Weight: 0.7
+    Tint: {r: 1, g: 1, b: 1, a: 1}
+    Desaturate: 0
+    Scale: {x: 1, y: 1.3}
+  LandmarksPerRoom: 0.5
+  LandmarkSpacing: 5
+  LandmarkClearance: 1.5
+  Obstacles:
+  - Prefab: {fileID: 5671470078257248384, guid: b06683aa517dd17409f9b902d935d39c, type: 3}
+    Weight: 1
+    Tint: {r: 1, g: 1, b: 1, a: 1}
+    Desaturate: 0
+    Diameter: 1.6
+  - Prefab: {fileID: 8917616531080191044, guid: ccbaf32a31d0e9745aaf431ff01f2cde, type: 3}
+    Weight: 0.8
+    Tint: {r: 1, g: 1, b: 1, a: 1}
+    Desaturate: 0
+    Diameter: 0.6
+  - Prefab: {fileID: 6194678319978837264, guid: d345176ae92450141bae65b98866e1a8, type: 3}
+    Weight: 0.8
+    Tint: {r: 1, g: 1, b: 1, a: 1}
+    Desaturate: 0
+    Diameter: 1.5
+  - Prefab: {fileID: 9046930911800400598, guid: 73707fb6548e70b49b8d39a4ca8b78ae, type: 3}
+    Weight: 1
+    Tint: {r: 1, g: 1, b: 1, a: 1}
+    Desaturate: 0
+    Diameter: 0.7
+  - Prefab: {fileID: 6111835720392953244, guid: 2ad0a841698bd6749a2e9b760b56bb09, type: 3}
+    Weight: 0.6
+    Tint: {r: 1, g: 1, b: 1, a: 1}
+    Desaturate: 0
+    Diameter: 2.2
+  GatePrefab: {fileID: 6372543057786014922, guid: f3a46f6fea49e9547b3efedbbd9c0ab5, type: 3}
+  GatePrefabWidth: 3.6
+  GateRotation: {x: 0, y: 90, z: 0}
+  GateTint: {r: 1, g: 1, b: 1, a: 1}
+  GateDesaturate: 0

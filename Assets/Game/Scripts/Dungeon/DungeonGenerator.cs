@@ -474,7 +474,7 @@ namespace TopDownBase.Dungeon
                         DestroyImmediate(collider);
                     }
 
-                    ApplyTint(visual, look.Tint);
+                    ApplyTint(visual, look.Tint, look.Desaturate);
                     continue;
                 }
 
@@ -623,17 +623,26 @@ namespace TopDownBase.Dungeon
                 obstacle.center = box.center;
                 obstacle.carving = true;
 
-                if (Env.GatePrefab != null)
+                DungeonEnvironmentSettings env = Env;
+                if (env.GatePrefab != null)
                 {
-                    GameObject visual = Instantiate(Env.GatePrefab, gate.transform);
-                    visual.name = Env.GatePrefab.name;
-                    Vector3 scale = Env.GatePrefab.transform.localScale;
-                    scale.x *= entrance.Width / Env.GatePrefabWidth;
-                    visual.transform.localScale = scale;
+                    // 입구 폭에 맞춰 늘이는 일은 바깥 오브젝트가, 프리팹 방향 맞추기는 안쪽 오브젝트가 맡는다.
+                    // 그래야 회전한 프리팹도 입구를 가로지르는 방향으로 늘어난다.
+                    var holder = new GameObject("Visual");
+                    holder.transform.SetParent(gate.transform, false);
+                    holder.transform.localScale = new Vector3(entrance.Width / env.GatePrefabWidth, 1f, 1f);
+
+                    GameObject visual = Instantiate(env.GatePrefab, holder.transform);
+                    visual.name = env.GatePrefab.name;
+                    visual.transform.localPosition = Vector3.zero;
+                    visual.transform.localRotation = Quaternion.Euler(env.GateRotation) * env.GatePrefab.transform.localRotation;
+                    visual.transform.localScale = env.GatePrefab.transform.localScale;
                     foreach (Collider collider in visual.GetComponentsInChildren<Collider>(true))
                     {
                         DestroyImmediate(collider);
                     }
+
+                    ApplyTint(visual, env.GateTint, env.GateDesaturate);
                 }
                 else
                 {

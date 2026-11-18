@@ -1,0 +1,119 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9b9edf6ec8531634eab2bffd3d2454ec, type: 3}
+  m_Name: PineHighland
+  m_EditorClassIdentifier: Assembly-CSharp::TopDownBase.Dungeon.DungeonEnvironmentSettings
+  HillHeight: 1.4
+  HillStart: 2.5
+  HillWidth: 5
+  HillNoiseScale: 9
+  EdgeBlend: 1.6
+  GroundColor: {r: 0.3, g: 0.4, b: 0.28, a: 1}
+  ClearingColor: {r: 0.5, g: 0.47, b: 0.41, a: 1}
+  GroundTexture: {fileID: 0}
+  ClearingTexture: {fileID: 0}
+  TextureTileSize: 4
+  LowProps:
+  - Prefab: {fileID: 7403040490340849597, guid: 36bc7fdb563d6ec4d86c7ba13f8d0c76, type: 3}
+    Weight: 1.2
+    Tint: {r: 1, g: 1, b: 1, a: 1}
+    Scale: {x: 0.8, y: 1.2}
+  - Prefab: {fileID: 279507922567550997, guid: 3b5fcbbe30f87f447a213f7059de3d9e, type: 3}
+    Weight: 1
+    Tint: {r: 0.66, g: 0.8, b: 0.64, a: 1}
+    Scale: {x: 0.7, y: 1}
+  - Prefab: {fileID: 8621132402611632869, guid: 5d6b774fd0045c54aaf0e2517ea278d6, type: 3}
+    Weight: 1
+    Tint: {r: 0.66, g: 0.8, b: 0.64, a: 1}
+    Scale: {x: 0.7, y: 1}
+  - Prefab: {fileID: 7684062634949457169, guid: 981d28e4ee8d9d44ead33b4caa7882af, type: 3}
+    Weight: 0.35
+    Tint: {r: 0.62, g: 0.72, b: 0.55, a: 1}
+    Scale: {x: 0.5, y: 0.8}
+  - Prefab: {fileID: 3228797243327532505, guid: 64da6d627d2460b4aa44d4ad433a14b4, type: 3}
+    Weight: 0.35
+    Tint: {r: 0.62, g: 0.72, b: 0.55, a: 1}
+    Scale: {x: 0.45, y: 0.7}
+  - Prefab: {fileID: 8953661491011592778, guid: bee3fc6f453a6624a843454b51e1831a, type: 3}
+    Weight: 0.35
+    Tint: {r: 0.62, g: 0.72, b: 0.55, a: 1}
+    Scale: {x: 0.5, y: 0.8}
+  - Prefab: {fileID: 3710413795780012316, guid: 3bf75210ce831f8469ade0d773def4bd, type: 3}
+    Weight: 0.5
+    Tint: {r: 0.62, g: 0.72, b: 0.68, a: 1}
+    Scale: {x: 0.7, y: 1.1}
+  - Prefab: {fileID: 6720792039176187589, guid: dd09de156ccf3c84cbb8a056096119b3, type: 3}
+    Weight: 0.5
+    Tint: {r: 0.62, g: 0.72, b: 0.68, a: 1}
+    Scale: {x: 0.7, y: 1.1}
+  - Prefab: {fileID: 1444447578966994568, guid: a8cb6106880654d459cdbda67e104157, type: 3}
+    Weight: 0.5
+    Tint: {r: 0.62, g: 0.72, b: 0.68, a: 1}
+    Scale: {x: 0.7, y: 1.1}
+  TallProps:
+  - Prefab: {fileID: 9198509525212591469, guid: 09fd601f1af86674088cdf9ec55443cd, type: 3}
+    Weight: 1.2
+    Tint: {r: 0.58, g: 0.74, b: 0.62, a: 1}
+    Scale: {x: 0.55, y: 0.85}
+  - Prefab: {fileID: 4518446687075810008, guid: 07dee9658f17b3b4cab00c2daefeb59c, type: 3}
+    Weight: 1.2
+    Tint: {r: 0.58, g: 0.74, b: 0.62, a: 1}
+    Scale: {x: 0.45, y: 0.7}
+  - Prefab: {fileID: 4536068593576731465, guid: bc9f35c890d703445aa4e26b79f0970b, type: 3}
+    Weight: 0.8
+    Tint: {r: 0.58, g: 0.74, b: 0.62, a: 1}
+    Scale: {x: 0.4, y: 0.55}
+  - Prefab: {fileID: 4396692435123886331, guid: 3e022d377d6cd6647a902a31a2c894ea, type: 3}
+    Weight: 0.8
+    Tint: {r: 0.66, g: 0.8, b: 0.64, a: 1}
+    Scale: {x: 0.6, y: 0.85}
+  - Prefab: {fileID: 6890049371182250003, guid: 238f3eb6262a7454792e56ded445241b, type: 3}
+    Weight: 0.6
+    Tint: {r: 0.66, g: 0.8, b: 0.64, a: 1}
+    Scale: {x: 0.55, y: 0.8}
+  - Prefab: {fileID: 5802181350630910056, guid: 5f0f71f7b9065e84da34be611c9f561d, type: 3}
+    Weight: 0.6
+    Tint: {r: 0.66, g: 0.8, b: 0.64, a: 1}
+    Scale: {x: 0.7, y: 1}
+  - Prefab: {fileID: 5508771106971710886, guid: 36c4fb17a3766994ab21334bd23f1e96, type: 3}
+    Weight: 0.5
+    Tint: {r: 0.85, g: 0.78, b: 0.7, a: 1}
+    Scale: {x: 0.6, y: 0.85}
+  - Prefab: {fileID: 4464193031644303322, guid: 33285754a8bbdcb478bb25c207243ac5, type: 3}
+    Weight: 0.25
+    Tint: {r: 1, g: 1, b: 1, a: 1}
+    Scale: {x: 0.6, y: 0.9}
+  - Prefab: {fileID: 5726354497845087282, guid: ea70e40a68841f94987e4c783cbfd09d, type: 3}
+    Weight: 0.25
+    Tint: {r: 1, g: 1, b: 1, a: 1}
+    Scale: {x: 0.6, y: 0.9}
+  EdgeDepth: 2
+  EdgeDensity: 0.6
+  RimDensity: 0.85
+  FillDensity: 0.09
+  PropsCastShadows: 1
+  LowPropsCastShadows: 0
+  Obstacles:
+  - Prefab: {fileID: 3710413795780012316, guid: 3bf75210ce831f8469ade0d773def4bd, type: 3}
+    Weight: 1
+    Tint: {r: 0.62, g: 0.72, b: 0.68, a: 1}
+    Diameter: 1.5
+  - Prefab: {fileID: 6720792039176187589, guid: dd09de156ccf3c84cbb8a056096119b3, type: 3}
+    Weight: 1
+    Tint: {r: 0.62, g: 0.72, b: 0.68, a: 1}
+    Diameter: 1.5
+  - Prefab: {fileID: 1444447578966994568, guid: a8cb6106880654d459cdbda67e104157, type: 3}
+    Weight: 1
+    Tint: {r: 0.62, g: 0.72, b: 0.68, a: 1}
+    Diameter: 1.5
+  GatePrefab: {fileID: 0}
+  GatePrefabWidth: 2

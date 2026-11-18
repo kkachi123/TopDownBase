@@ -16,7 +16,8 @@ namespace TopDownBase.Dungeon.Editor
     {
         public const string ScenePath = "Assets/Scenes/DungeonPrototype.unity";
 
-        private const string PropFolder = "Assets/Game/Environment/PolyStyle/Prefabs/Environments/";
+        /// <summary>기본 환경 세팅. 다른 환경은 같은 폴더에 있다.</summary>
+        public const string ForestEnvironmentPath = "Assets/Game/Environment/Dungeon/Forest.asset";
         private const string NatureVolumeProfilePath = "Assets/Game/Environment/PolyStyle/Settings/NatureVolumeProfile.asset";
 
         [MenuItem("TopDownBase/Dungeon Prototype/Create Or Open Scene")]
@@ -42,23 +43,19 @@ namespace TopDownBase.Dungeon.Editor
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
             var generator = new GameObject("DungeonGenerator").AddComponent<DungeonGenerator>();
-            ApplyNatureProps(generator);
+            generator.RoomCount = 12;
+            generator.BossSceneName = "SampleScene";
+            ApplyDefaultEnvironment(generator);
             Camera camera = CreateRig(generator);
             AddPostProcessing(camera);
 
             EditorSceneManager.SaveScene(scene, ScenePath);
         }
 
-        /// <summary>
-        /// 장애물과 경계 소품에 POLY STYLE 프리팹을 넣는다.
-        /// Rock_*: Vegetation Pack 2의 바위에 URP 머티리얼을 입히고 0.7배로 줄인 변형. 원래 크기로는 바닥 가림이 17%까지 올라간다.
-        /// </summary>
-        public static void ApplyNatureProps(DungeonGenerator generator)
+        /// <summary>기본 환경(숲) 세팅 에셋을 생성기에 연결한다.</summary>
+        public static void ApplyDefaultEnvironment(DungeonGenerator generator)
         {
-            generator.ObstaclePrefabs = LoadProps("Rock_1", "Rock_2", "Rock_3");
-            generator.ObstaclePrefabDiameter = 1.5f;
-            generator.LowProps = LoadProps("Rock_1", "Rock_2", "Rock_3", "Grass_1", "Grass_5", "Grass_10");
-            generator.TallProps = LoadProps("Tree_1", "Tree_2", "Tree_3");
+            generator.Environment = AssetDatabase.LoadAssetAtPath<DungeonEnvironmentSettings>(ForestEnvironmentPath);
         }
 
         /// <summary>
@@ -82,7 +79,9 @@ namespace TopDownBase.Dungeon.Editor
             var lightObject = new GameObject("Directional Light");
             var light = lightObject.AddComponent<Light>();
             light.type = LightType.Directional;
-            light.shadows = LightShadows.Soft;
+            // 따라가는 카메라가 대상에서 80유닛 떨어져 있어 화면이 그림자 거리(URP 에셋 50) 밖이다.
+            // 켜 두면 그림자는 보이지 않고 그리는 비용만 들어 끈다(자연환경 과정 문서의 그림자 설정 측정).
+            light.shadows = LightShadows.None;
             lightObject.transform.rotation = Quaternion.Euler(55f, -30f, 0f);
 
             // 포털과 열쇠는 Player 태그에 반응한다.
@@ -110,17 +109,6 @@ namespace TopDownBase.Dungeon.Editor
             prototypeCamera.Target = walkerObject.transform;
             prototypeCamera.Generator = source;
             return camera;
-        }
-
-        private static GameObject[] LoadProps(params string[] names)
-        {
-            var props = new GameObject[names.Length];
-            for (int i = 0; i < names.Length; i++)
-            {
-                props[i] = AssetDatabase.LoadAssetAtPath<GameObject>(PropFolder + names[i] + ".prefab");
-            }
-
-            return props;
         }
     }
 }

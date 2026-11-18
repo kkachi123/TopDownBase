@@ -15,7 +15,8 @@
 
 플레이 흐름은 "던전 탐색 → 아이템 방에서 열쇠 획득 → 보스 입구 방의 포털 → 보스 씬"이다.
 
-- **같은 시드와 같은 설정은 항상 같은 맵을 만든다.** 방 배치·지도·소품·장애물·스폰은 시드에서 따로 파생한 난수를 쓴다. 소품 설정을 바꿔도 방 모양과 장애물, 스폰 위치는 달라지지 않는다.
+- **같은 시드와 같은 설정은 항상 같은 맵을 만든다.** 방 배치·지도·소품·장애물·스폰은 시드에서 따로 파생한 난수를 쓴다.
+- **보이는 부분은 환경 세팅 에셋(`DungeonEnvironmentSettings`)이 정한다.** 지면 색·언덕, 경계 소품, 장애물과 문의 모양이다. 에셋을 바꿔도 방 모양, 장애물 위치와 충돌, 스폰 위치, 입구는 달라지지 않는다.
 - **모든 방은 항상 연결된다.** 방 배치가 루프 없는 트리이고, 그래프의 간선마다 길을 판다.
 - **생성물은 `DungeonGenerator` 오브젝트의 `Generated` 자식 아래에만 놓이며 씬에 저장되지 않는다.** Terrain 데이터와 머티리얼이 메모리에만 있기 때문이다. Play 시작과 인스펙터 버튼으로 다시 만든다.
 
@@ -29,7 +30,8 @@
 | [WalkableMap.cs](../../../Assets/Game/Scripts/Dungeon/WalkableMap.cs) | 1유닛 격자의 걸을 수 있는 영역 지도. 공터·길·입구·장애물·적 스폰 위치 | 순수 로직 (`Vector2`, `Mathf`만 사용) |
 | [DungeonGenerator.cs](../../../Assets/Game/Scripts/Dungeon/DungeonGenerator.cs) | 생성 순서, 장애물, 방·스폰, 포털·열쇠, 입구 잠금, NavMesh. 모든 인스펙터 필드 | MonoBehaviour |
 | [DungeonGenerator.Ground.cs](../../../Assets/Game/Scripts/Dungeon/DungeonGenerator.Ground.cs) | 지면(Terrain)과 이동을 막는 보이지 않는 상자 | 같은 클래스의 나머지 |
-| [DungeonGenerator.Props.cs](../../../Assets/Game/Scripts/Dungeon/DungeonGenerator.Props.cs) | 경계 소품 배치와 묶어 그리기, 바닥 가림 측정 | 같은 클래스의 나머지 |
+| [DungeonGenerator.Props.cs](../../../Assets/Game/Scripts/Dungeon/DungeonGenerator.Props.cs) | 경계 소품 배치와 묶어 그리기, 색을 곱한 머티리얼 사본, 바닥 가림 측정 | 같은 클래스의 나머지 |
+| [DungeonEnvironmentSettings.cs](../../../Assets/Game/Scripts/Dungeon/DungeonEnvironmentSettings.cs) | 환경 세팅 에셋(ScriptableObject). 에셋은 `Assets/Game/Environment/Dungeon/`에 있다 | 데이터 |
 | [DungeonRoom.cs](../../../Assets/Game/Scripts/Dungeon/DungeonRoom.cs) | 방 하나의 결과물: 역할, 적 스폰 위치, 입구 잠금, 열쇠 방 여부 | MonoBehaviour |
 | [DungeonPortal.cs](../../../Assets/Game/Scripts/Dungeon/DungeonPortal.cs) | 보스 입구 방의 포털. 열린 상태에서 플레이어가 들어오면 보스 씬을 불러온다 | MonoBehaviour |
 | [DungeonKeyPickup.cs](../../../Assets/Game/Scripts/Dungeon/DungeonKeyPickup.cs) | 아이템 방의 열쇠. 플레이어가 닿으면 포털을 연다 | MonoBehaviour |
@@ -93,17 +95,33 @@ navmesh rooms reachable 12/12, boss reachable, key reachable, enemy spawns on me
 - **걸을 수 있는 곳은 높이 0의 평지다.** Terrain은 경계 바깥에만 `HillHeight`까지 낮은 언덕을 만들고, 흙과 풀을 섞어 칠해 공터 가장자리를 부드럽게 보이게 한다.
 - **이동을 막는 것은 보이지 않는 상자다.** 걸을 수 없는 칸을 가로줄 단위로 합쳐 덮는다(맵당 200개 안팎). 소품에는 충돌이 없다.
 
+### 환경 세팅 에셋
+
+| 에셋 | 분위기 |
+| --- | --- |
+| `Forest` (확인용 씬 기본) | 갈색 바위·풀·청록과 보라 버섯 모양 나무. 3단계까지의 모습과 같다 |
+| `PineHighland` | 침엽수·활엽수·단풍·마른 나무, 잎 식물, 이끼 바위, 회녹색 바위. 언덕이 조금 더 높다 |
+
+- 소품·장애물은 목록의 항목마다 **가중치(`Weight`), 크기 배율(`Scale`), 곱할 색(`Tint`)**을 따로 정한다. 프리팹마다 원래 크기와 색이 달라 같은 목록 안에서도 맞춰야 하기 때문이다.
+- `Tint`는 원본 머티리얼을 바꾸지 않고 사본에 곱한다. 후처리(채도 +44)로 형광처럼 보이는 연두를 차분하게 하는 등 색 보정에 쓴다. 곱하는 방식이라 색을 어둡게·덜 선명하게만 할 수 있다.
+- 지면은 색만 정하거나, 텍스처(`GroundTexture`, `ClearingTexture`)를 넣고 색을 곱할 수 있다.
+- 문 모양(`GatePrefab`)을 넣으면 입구 폭에 맞춰 옆으로 늘여 쓴다. 비어 있으면 빨간 상자다. 충돌은 모양과 상관없다.
+- 후처리는 에셋에 없다. 씬의 Global Volume이 맡는다(2026-11-18 개발자 결정).
+- 새 환경은 Project 창에서 **Create > TopDownBase > Dungeon Environment**로 만들거나 기존 에셋을 복제한다.
+- `Environment`가 비어 있으면 소품 없이 기본 색 지면만 만든다.
+
 ### 경계 소품
 
-- 걸을 수 있는 곳과 맞닿은 첫 줄은 `RimDensity`, 그 안쪽 `EdgeDepth`까지는 `EdgeDensity`, 나머지는 `FillDensity` 밀도로 놓는다.
+- 걸을 수 있는 곳과 맞닿은 첫 줄은 `RimDensity`, 그 안쪽 `EdgeDepth`까지는 `EdgeDensity`, 나머지는 `FillDensity` 밀도로 놓는다(모두 환경 에셋 값).
 - 가장자리에는 낮은 소품(`LowProps`: 바위, 풀)만 쓴다. 키 큰 소품(`TallProps`: 나무)은 그 바깥에 놓되, **북쪽 가까이에 공터나 길이 있으면 놓지 않는다.** 카메라가 남쪽에서 내려다보므로 그 자리의 나무가 바닥을 가리기 때문이다. 거리는 소품 높이와 `CameraPitch`로 계산하고 `CameraClearance`보다 짧아지지 않는다.
-- **소품은 GameObject 없이 묶어 그린다(`PropRendering` = `Instanced`).** 카메라마다 화면 안(그림자 여유 `ShadowCullPadding` 포함)의 소품만 골라 프리팹 종류마다 `Graphics.RenderMeshInstanced`로 한 번에 그린다. 맵당 소품 2,000개 안팎이 DrawCall 수십 개로 그려진다. 프리팹은 루트에 메시 하나가 있는 형태여야 하며, 아니면 경고를 남기고 건너뛴다. `GameObjects`로 바꾸면 소품마다 오브젝트를 만든다(비교용).
-- 소품 머티리얼은 인스턴싱을 켠 사본을 만들어 쓴다. 원본 에셋은 바꾸지 않는다.
+- **`DungeonPrototype` 씬의 조명은 그림자를 끈다.** 따라가는 카메라가 대상에서 80유닛 떨어져 있어 화면 전체가 URP 에셋의 그림자 거리(50) 밖이라, 켜 두면 그림자는 보이지 않고 그리는 비용만 든다. 그림자를 보이게 하려면 그림자 거리를 100 정도로 늘리고 단계를 1로 줄인다(PineHighland 기준 DrawCall 201). 측정은 [자연환경 과정](NatureEnvironment/Process.md)의 그림자 설정 측정.
+- **소품은 GameObject 없이 묶어 그린다(`PropRendering` = `Instanced`).** 카메라마다 화면 안(그림자 여유 `ShadowCullPadding` 포함)의 소품만 골라 프리팹 종류마다 `Graphics.RenderMeshInstanced`로 한 번에 그린다. DrawCall은 소품 수가 아니라 (프리팹, 색) 종류 수에 비례한다. `Forest`(9종)는 따라가는 화면 96, `PineHighland`(18종)는 154다(그림자 끔 기준). 프리팹은 루트에 메시 하나가 있는 형태여야 하며, 아니면 경고를 남기고 건너뛴다. `GameObjects`로 바꾸면 소품마다 오브젝트를 만든다(비교용).
+- 소품 머티리얼은 인스턴싱을 켠(필요하면 색을 곱한) 사본을 만들어 쓴다. 원본 에셋은 바꾸지 않는다.
 
 ### 장애물
 
 - 전투 방마다 `ObstacleCount`개. 경계에서 `ObstacleMargin`, 서로 `ObstacleSpacing`, 입구에서 (최대 반지름 + 1) 이상 띄운다. 그래서 장애물이 길목을 막지 않는다.
-- 충돌은 반지름 `ObstacleRadius`의 기둥(CapsuleCollider)이고, 보이는 것은 `ObstaclePrefabs`의 복제본이다. 프리팹의 충돌체는 떼어 낸다.
+- 충돌은 반지름 `ObstacleRadius`의 기둥(CapsuleCollider)이고, 보이는 것은 환경 에셋 `Obstacles` 중 하나의 복제본이다. 프리팹 크기는 `Diameter`로 기둥 지름에 맞춘다. 프리팹의 충돌체는 떼어 낸다.
 
 ### 입구와 잠금
 
@@ -156,7 +174,7 @@ navmesh rooms reachable 12/12, boss reachable, key reachable, enemy spawns on me
 
 ### 확인용 씬
 
-`Assets/Scenes/DungeonPrototype.unity`를 연다. 메뉴 **TopDownBase > Dungeon Prototype > Create Or Open Scene**으로도 열 수 있다. 씬에는 POLY STYLE 소품과 `Rock` 바위가 지정되어 있고, 데모의 후처리를 복사한 Global Volume(`Assets/Game/Environment/PolyStyle/Settings/NatureVolumeProfile.asset`)이 걸려 있다.
+`Assets/Scenes/DungeonPrototype.unity`를 연다. 메뉴 **TopDownBase > Dungeon Prototype > Create Or Open Scene**으로도 열 수 있다. 씬의 생성기에는 `Forest` 환경 에셋이 연결되어 있고, 데모의 후처리를 복사한 Global Volume(`Assets/Game/Environment/PolyStyle/Settings/NatureVolumeProfile.asset`)이 걸려 있다.
 
 | 키 | 동작 |
 | --- | --- |
@@ -186,29 +204,38 @@ Game 창을 한 번 클릭해 포커스를 줘야 키가 들어간다. 하늘색
 | | `OuterMargin` | 10 | 맵 바깥쪽 숲의 폭(유닛) |
 | Obstacles | `ObstacleCount` | 2~4 | 전투 방 하나의 장애물 수 |
 | | `ObstacleMargin` / `ObstacleSpacing` | 4 / 9 | 경계와의 거리, 장애물 중심 사이 거리(유닛) |
-| | `ObstacleRadius` / `ObstacleHeight` | 1.2~2 / 1.5 | 충돌 기둥의 반지름과 높이 |
-| | `ObstaclePrefabs` / `ObstaclePrefabDiameter` | 확인용 씬: Rock_1~3 / 1.5 | 보이는 프리팹과 그 바닥 지름. 비우면 원기둥 |
+| | `ObstacleRadius` | 1.2~2 | 충돌 기둥의 반지름 |
+| | `ObstacleHeight` | 1.5 | 충돌 기둥 높이 |
 | Enemy spawns | `EnemySpawnCount` | 2~4 | 전투 방 하나의 스폰 위치 수 |
 | | `SpawnEdgeMargin` / `SpawnEntranceClearance` / `SpawnObstacleClearance` / `SpawnSpacing` | 2 / 5 / 1 / 4 | 경계·입구·장애물·서로 사이의 최소 거리(유닛) |
 | Boss portal | `BossSceneName` | 비어 있음 (확인용 씬 `SampleScene`) | 포털이 불러올 보스 씬 이름 |
 | | `LockPortalWithKey` | 켬 | 아이템 방의 열쇠를 얻어야 포털이 열린다 |
 | Gates | `BuildGates` | 켬 | 입구 잠금 오브젝트를 만든다 |
 | | `GateHeight` / `GateVisualHeight` / `GateVisualThickness` / `GateColor` | 3 / 1.2 / 0.6 / 빨강 | 충돌 높이, 보이는 벽의 크기와 색 |
+| Environment | `Environment` | 확인용 씬: `Forest` | 환경 세팅 에셋. 아래 표 |
 | Ground | `UseTerrainGround` | 켬 | 끄면 평평한 판과 칸 단위 표면 |
-| | `HillHeight` / `HillStart` / `HillWidth` / `HillNoiseScale` | 1 / 2.5 / 4 / 12 | 바깥 언덕 높이, 평지로 두는 거리, 오르막 폭, 높이 잡음 크기 |
-| | `EdgeBlend` | 1.2 | 흙과 풀이 섞이는 폭(유닛) |
 | | `HeightmapResolution` / `AlphamapResolution` | 257 / 512 | 지형 해상도 |
-| | `GroundColor` / `ClearingColor` | 풀색 / 흙색 | 지면 색 |
 | Props | `PropRendering` | Instanced | 묶어 그리기 / 오브젝트로 만들기 |
-| | `PropsCastShadows` / `LowPropsCastShadows` / `ShadowCullPadding` | 켬 / 끔 / 8 | 그림자 설정 |
-| | `LowProps` / `TallProps` | 확인용 씬: Rock_1~3, Grass_1·5·10 / Tree_1~3 | 가장자리 소품 / 바깥 소품 |
-| | `EdgeDepth` / `EdgeDensity` / `RimDensity` / `FillDensity` | 2 / 0.55 / 0.85 / 0.07 | 가장자리 깊이와 밀도 |
-| | `LowPropScale` / `TallPropScale` | 0.7~1.2 / 1.2~2.2 | 크기 배율 |
+| | `ShadowCullPadding` | 8 | 화면 밖이라도 그리는 거리(그림자용) |
 | | `CameraClearance` / `CameraPitch` | 8 / 40 | 나무를 놓지 않는 북쪽 거리, 게임 카메라 각도 |
 | Collision | `BlockerHeight` | 3 | 보이지 않는 상자의 높이 |
 | NavMesh | `BuildNavMesh` | 켬 | 생성 후 NavMesh를 굽고 검사한다 |
 | Look | `BaseMaterial` | 비어 있음 | 색을 입힐 바탕 머티리얼. 비우면 렌더 파이프라인 기본 머티리얼 |
-| | 색상 7종 | — | 장애물(프리팹이 없을 때), 역할별 표식, 잠긴 포털, 열쇠 |
+| | 색상 7종 | — | 장애물(환경에 모양이 없을 때), 역할별 표식, 잠긴 포털, 열쇠 |
+
+환경 세팅 에셋(`DungeonEnvironmentSettings`):
+
+| 묶음 | 필드 | 기본값 | 의미 |
+| --- | --- | --- | --- |
+| Ground | `HillHeight` / `HillStart` / `HillWidth` / `HillNoiseScale` | 1 / 2.5 / 4 / 12 | 바깥 언덕 높이, 평지로 두는 거리, 오르막 폭, 높이 잡음 크기 |
+| | `EdgeBlend` | 1.2 | 흙과 풀이 섞이는 폭(유닛) |
+| | `GroundColor` / `ClearingColor` | 풀색 / 흙색 | 지면 색. 텍스처가 있으면 곱한다 |
+| | `GroundTexture` / `ClearingTexture` / `TextureTileSize` | 없음 / 없음 / 4 | 지면 텍스처와 한 장이 덮는 크기 |
+| Props | `LowProps` / `TallProps` | — | 가장자리 소품 / 바깥 소품. 항목마다 `Prefab`, `Weight`, `Tint`, `Scale` |
+| | `EdgeDepth` / `EdgeDensity` / `RimDensity` / `FillDensity` | 2 / 0.55 / 0.85 / 0.07 | 가장자리 깊이와 밀도 |
+| | `PropsCastShadows` / `LowPropsCastShadows` | 켬 / 끔 | 그림자. 조명 그림자를 켤 때만 의미가 있다(`DungeonPrototype`은 꺼 둠) |
+| Obstacles | `Obstacles` | — | 장애물 모양. 항목마다 `Prefab`, `Weight`, `Tint`, `Diameter`. 비우면 원기둥 |
+| Gates | `GatePrefab` / `GatePrefabWidth` | 없음 / 2 | 문 모양과 그 원래 폭. 비우면 빨간 상자 |
 
 ## 7. 코드에서 쓰기
 
@@ -328,7 +355,7 @@ DungeonGenerator            (DungeonGenerator, NavMeshSurface)
 - **빌드에서는 실행해 보지 않았다.** `BaseMaterial` 지정(렌더 파이프라인 기본 머티리얼은 에디터에서만 제공), Terrain 셰이더 포함 여부를 빌드 단계에서 확인해야 한다.
 - **생성에 100ms 안팎이 걸린다.** 대부분 Terrain 데이터와 NavMesh 빌드다. 한 판에 한 번 생성하는 용도로는 문제없는 수준이다.
 - **소품 프리팹은 루트에 메시 하나가 있어야 묶어 그린다.** 소품 메시의 Read/Write가 꺼져 있어도 된다.
-- **잠금 표시는 빨간 상자다.** 자연환경에 맞는 문 오브젝트는 환경 세팅 단계에서 정한다.
+- **잠금 표시는 빨간 상자다.** 환경 에셋에 문 프리팹 슬롯이 있지만 아직 넣은 프리팹이 없다.
 - **씬을 넘어갈 때 상태를 옮기지 않는다.** 포털은 보스 씬을 불러오기만 한다.
 - **보스 씬은 임시로 `SampleScene`을 쓴다.** 투기장 규격과 보스 구성은 미확정이다.
 - **열쇠와 포털은 TopDown Engine의 `KeyOperatedZone`·`Teleporter`를 쓰지 않는다.** 엔진 기반 플레이어가 생기면 교체를 검토한다.

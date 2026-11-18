@@ -43,6 +43,7 @@ namespace TopDownBase.Dungeon
             public float Yaw;
             public float Scale;
             public bool IsTall;
+            public Color Tint;
         }
 
         /// <summary>같은 프리팹을 쓰는 소품 전체. 매 프레임 화면에 보이는 것만 Visible에 옮겨 한 번에 그린다.</summary>
@@ -62,7 +63,8 @@ namespace TopDownBase.Dungeon
         private readonly Dictionary<Vector2Int, List<Occluder>> _occluders = new Dictionary<Vector2Int, List<Occluder>>();
         private readonly List<PropPlacement> _placements = new List<PropPlacement>();
         private readonly List<InstanceGroup> _groups = new List<InstanceGroup>();
-        private readonly Dictionary<Material, Material> _instancedMaterials = new Dictionary<Material, Material>();
+        // (원본, 곱할 색, 인스턴싱)마다 만든 머티리얼 사본.
+        private readonly Dictionary<(Material, Color, bool), Material> _materialCopies = new Dictionary<(Material, Color, bool), Material>();
         private readonly Plane[] _frustumPlanes = new Plane[6];
         private Bounds _propBounds;
         private bool _renderingHooked;
@@ -93,7 +95,7 @@ namespace TopDownBase.Dungeon
             }
 
             _groups.Clear();
-            _instancedMaterials.Clear();
+            _materialCopies.Clear();
             _occluders.Clear();
             _placements.Clear();
             // 프리팹 크기는 인스펙터에서 바뀔 수 있으므로 생성마다 다시 읽는다.
@@ -104,9 +106,8 @@ namespace TopDownBase.Dungeon
         /// <summary>어떤 소품을 어디에 놓을지만 정한다. 그리는 방식은 그다음에 고른다.</summary>
         private void PlanProps(System.Random rng)
         {
-            bool hasLow = LowProps != null && LowProps.Length > 0;
-            bool hasTall = TallProps != null && TallProps.Length > 0;
-            if (!hasLow && !hasTall)
+            DungeonEnvironmentSettings env = Env;
+            if (!HasChoice(env.LowProps) && !HasChoice(env.TallProps))
             {
                 return;
             }
@@ -120,10 +121,10 @@ namespace TopDownBase.Dungeon
                         continue;
                     }
 
-                    bool edge = Map.DistanceToWalkable[x, y] <= EdgeDepth;
+                    bool edge = Map.DistanceToWalkable[x, y] <= env.EdgeDepth;
                     // 첫 줄은 대각선 거리(1.41)까지다.
                     bool rim = Map.DistanceToWalkable[x, y] <= 1.5f;
-                    float density = rim ? Mathf.Max(EdgeDensity, RimDensity) : edge ? EdgeDensity : FillDensity;
+                    float density = rim ? Mathf.Max(env.EdgeDensity, env.RimDensity) : edge ? env.EdgeDensity : env.FillDensity;
                     if (rng.NextDouble() >= density)
                     {
                         continue;
@@ -132,39 +133,43 @@ namespace TopDownBase.Dungeon
                     var jitter = new Vector2((float)rng.NextDouble() * 0.8f - 0.4f, (float)rng.NextDouble() * 0.8f - 0.4f);
                     float yaw = (float)rng.NextDouble() * 360f;
                     float scaleRoll = (float)rng.NextDouble();
-                    int tallIndex = hasTall ? rng.Next(TallProps.Length) : 0;
-                    int lowIndex = hasLow ? rng.Next(LowProps.Length) : 0;
+                    DungeonPropEntry tall = PickWeighted(env.TallProps, rng);
+                    DungeonPropEntry low = PickWeighted(env.LowProps, rng);
 
                     // 가장자리와, 북쪽 가까이에 방이나 길이 있는 자리에는 낮은 소품만 쓴다.
                     // "가까이"는 그 소품의 꼭대기가 카메라에서 바닥을 가리는 거리까지다.
-                    bool useTall = hasTall && !edge && TallProps[tallIndex] != null;
-                    float scale = 0f;
-                    if (useTall)
+                    DungeonPropEntry entry = null;
+                    if (tall != null && !edge)
                     {
-                        scale = Mathf.Lerp(TallPropScale.x, Mathf.Max(TallPropScale.x, TallPropScale.y), scaleRoll);
-                        PrefabInfo info = GetPrefabInfo(TallProps[tallIndex]);
-                        float shadowed = (info.Height * scale + HillHeight) / Mathf.Tan(CameraPitch * Mathf.Deg2Rad);
-                        int sideways = Mathf.CeilToInt(info.Radius * scale) + 1;
-                        useTall = !HasWalkableToTheNorth(x, y, Mathf.Max(CameraClearance, shadowed), sideways);
+                        float tallScale = RollScale(tall, scaleRoll);
+                        PrefabInfo info = GetPrefabInfo(tall.Prefab);
+                        float shadowed = (info.Height * tallScale + env.HillHeight) / Mathf.Tan(CameraPitch * Mathf.Deg2Rad);
+                        int sideways = Mathf.CeilToInt(info.Radius * tallScale) + 1;
+                        if (!HasWalkableToTheNorth(x, y, Mathf.Max(CameraClearance, shadowed), sideways))
+                        {
+                            entry = tall;
+                        }
                     }
 
-                    if (!useTall)
+                    bool isTall = entry != null;
+                    if (!isTall)
                     {
-                        if (!hasLow || LowProps[lowIndex] == null)
+                        if (low == null)
                         {
                             continue;
                         }
 
-                        scale = Mathf.Lerp(LowPropScale.x, Mathf.Max(LowPropScale.x, LowPropScale.y), scaleRoll);
+                        entry = low;
                     }
 
                     var placement = new PropPlacement
                     {
-                        Prefab = useTall ? TallProps[tallIndex] : LowProps[lowIndex],
+                        Prefab = entry.Prefab,
                         Position = Map.CellCenter(x, y) + jitter,
                         Yaw = yaw,
-                        Scale = scale,
-                        IsTall = useTall
+                        Scale = RollScale(entry, scaleRoll),
+                        IsTall = isTall,
+                        Tint = entry.Tint
                     };
                     _placements.Add(placement);
                     RegisterOccluder(placement);
@@ -172,6 +177,66 @@ namespace TopDownBase.Dungeon
             }
 
             PropCount = _placements.Count;
+        }
+
+        private static float RollScale(DungeonPropEntry entry, float roll)
+        {
+            return Mathf.Lerp(entry.Scale.x, Mathf.Max(entry.Scale.x, entry.Scale.y), roll);
+        }
+
+        private static bool HasChoice<T>(T[] choices) where T : DungeonPrefabChoice
+        {
+            if (choices == null)
+            {
+                return false;
+            }
+
+            foreach (T choice in choices)
+            {
+                if (choice != null && choice.Prefab != null && choice.Weight > 0f)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>가중치에 따라 하나를 뽑는다. 쓸 수 있는 항목이 없으면 null. 항목이 있으면 난수를 정확히 한 번 쓴다.</summary>
+        private static T PickWeighted<T>(T[] choices, System.Random rng) where T : DungeonPrefabChoice
+        {
+            if (!HasChoice(choices))
+            {
+                return null;
+            }
+
+            float total = 0f;
+            foreach (T choice in choices)
+            {
+                if (choice != null && choice.Prefab != null && choice.Weight > 0f)
+                {
+                    total += choice.Weight;
+                }
+            }
+
+            float roll = (float)rng.NextDouble() * total;
+            T last = null;
+            foreach (T choice in choices)
+            {
+                if (choice == null || choice.Prefab == null || choice.Weight <= 0f)
+                {
+                    continue;
+                }
+
+                last = choice;
+                roll -= choice.Weight;
+                if (roll < 0f)
+                {
+                    return choice;
+                }
+            }
+
+            return last;
         }
 
         private bool HasWalkableToTheNorth(int x, int y, float distance, int sideways)
@@ -207,6 +272,7 @@ namespace TopDownBase.Dungeon
                 instance.transform.localPosition = GroundPoint(placement.Position);
                 instance.transform.localRotation = Quaternion.Euler(0f, placement.Yaw, 0f);
                 instance.transform.localScale = placement.Prefab.transform.localScale * placement.Scale;
+                ApplyTint(instance, placement.Tint);
 
                 if (GetPrefabInfo(placement.Prefab).HasColliders)
                 {
@@ -225,9 +291,10 @@ namespace TopDownBase.Dungeon
         /// </summary>
         private void BuildInstanceGroups()
         {
-            var matricesByPrefab = new Dictionary<GameObject, List<Matrix4x4>>();
-            var spheresByPrefab = new Dictionary<GameObject, List<Vector4>>();
-            var tallPrefabs = new HashSet<GameObject>();
+            // 같은 프리팹이라도 곱할 색이 다르면 머티리얼이 달라 따로 묶는다.
+            var matricesByPrefab = new Dictionary<(GameObject, Color), List<Matrix4x4>>();
+            var spheresByPrefab = new Dictionary<(GameObject, Color), List<Vector4>>();
+            var tallPrefabs = new HashSet<(GameObject, Color)>();
             var skipped = new HashSet<GameObject>();
             bool hasBounds = false;
 
@@ -244,11 +311,12 @@ namespace TopDownBase.Dungeon
                     continue;
                 }
 
-                if (!matricesByPrefab.TryGetValue(placement.Prefab, out List<Matrix4x4> matrices))
+                var key = (placement.Prefab, placement.Tint);
+                if (!matricesByPrefab.TryGetValue(key, out List<Matrix4x4> matrices))
                 {
                     matrices = new List<Matrix4x4>();
-                    matricesByPrefab.Add(placement.Prefab, matrices);
-                    spheresByPrefab.Add(placement.Prefab, new List<Vector4>());
+                    matricesByPrefab.Add(key, matrices);
+                    spheresByPrefab.Add(key, new List<Vector4>());
                 }
 
                 Vector3 local = GroundPoint(placement.Position);
@@ -258,14 +326,14 @@ namespace TopDownBase.Dungeon
 
                 if (placement.IsTall)
                 {
-                    tallPrefabs.Add(placement.Prefab);
+                    tallPrefabs.Add(key);
                 }
 
                 PrefabInfo info = GetPrefabInfo(placement.Prefab);
                 float height = info.Height * placement.Scale;
                 float radius = Mathf.Max(info.Radius * placement.Scale, height * 0.5f) * 1.5f;
                 Vector3 center = transform.TransformPoint(local) + Vector3.up * (height * 0.5f);
-                spheresByPrefab[placement.Prefab].Add(new Vector4(center.x, center.y, center.z, radius));
+                spheresByPrefab[key].Add(new Vector4(center.x, center.y, center.z, radius));
 
                 var bounds = new Bounds(center, Vector3.one * (radius * 2f));
                 if (hasBounds)
@@ -279,23 +347,25 @@ namespace TopDownBase.Dungeon
                 }
             }
 
-            foreach (KeyValuePair<GameObject, List<Matrix4x4>> entry in matricesByPrefab)
+            DungeonEnvironmentSettings env = Env;
+            foreach (KeyValuePair<(GameObject, Color), List<Matrix4x4>> entry in matricesByPrefab)
             {
-                Material[] sources = entry.Key.GetComponent<MeshRenderer>().sharedMaterials;
+                (GameObject prefab, Color tint) = entry.Key;
+                Material[] sources = prefab.GetComponent<MeshRenderer>().sharedMaterials;
                 var materials = new Material[sources.Length];
                 for (int i = 0; i < sources.Length; i++)
                 {
-                    materials[i] = GetInstancedMaterial(sources[i]);
+                    materials[i] = GetMaterialCopy(sources[i], tint, true);
                 }
 
                 _groups.Add(new InstanceGroup
                 {
-                    Mesh = entry.Key.GetComponent<MeshFilter>().sharedMesh,
+                    Mesh = prefab.GetComponent<MeshFilter>().sharedMesh,
                     Materials = materials,
                     All = entry.Value.ToArray(),
                     Spheres = spheresByPrefab[entry.Key].ToArray(),
                     Visible = new Matrix4x4[entry.Value.Count],
-                    CastShadows = PropsCastShadows && (LowPropsCastShadows || tallPrefabs.Contains(entry.Key))
+                    CastShadows = env.PropsCastShadows && (env.LowPropsCastShadows || tallPrefabs.Contains(entry.Key))
                 });
             }
 
@@ -306,21 +376,63 @@ namespace TopDownBase.Dungeon
             }
         }
 
-        /// <summary>인스턴싱을 켠 머티리얼 사본. 원본 머티리얼 에셋은 건드리지 않는다.</summary>
-        private Material GetInstancedMaterial(Material source)
+        /// <summary>
+        /// 원본 머티리얼의 사본. 인스턴싱을 켜거나 색을 곱할 때 쓴다. 원본 머티리얼 에셋은 건드리지 않는다.
+        /// 색을 곱하지 않고 인스턴싱도 필요 없으면 원본을 그대로 돌려준다.
+        /// </summary>
+        private Material GetMaterialCopy(Material source, Color tint, bool instancing)
         {
-            if (source == null)
+            if (source == null || (tint == Color.white && !instancing))
             {
-                return null;
+                return source;
             }
 
-            if (!_instancedMaterials.TryGetValue(source, out Material instanced))
+            var key = (source, tint, instancing);
+            if (!_materialCopies.TryGetValue(key, out Material copy))
             {
-                instanced = Track(new Material(source) { name = source.name + " (Instanced)", enableInstancing = true });
-                _instancedMaterials.Add(source, instanced);
+                copy = Track(new Material(source)
+                {
+                    name = source.name + (instancing ? " (Instanced)" : " (Tinted)"),
+                    enableInstancing = instancing || source.enableInstancing
+                });
+
+                if (tint != Color.white)
+                {
+                    if (copy.HasProperty(BaseColorId))
+                    {
+                        copy.SetColor(BaseColorId, copy.GetColor(BaseColorId) * tint);
+                    }
+
+                    if (copy.HasProperty(ColorId))
+                    {
+                        copy.SetColor(ColorId, copy.GetColor(ColorId) * tint);
+                    }
+                }
+
+                _materialCopies.Add(key, copy);
             }
 
-            return instanced;
+            return copy;
+        }
+
+        /// <summary>오브젝트로 만든 소품·장애물의 머티리얼을 색을 곱한 사본으로 바꾼다.</summary>
+        private void ApplyTint(GameObject instance, Color tint)
+        {
+            if (tint == Color.white)
+            {
+                return;
+            }
+
+            foreach (Renderer renderer in instance.GetComponentsInChildren<Renderer>(true))
+            {
+                Material[] materials = renderer.sharedMaterials;
+                for (int i = 0; i < materials.Length; i++)
+                {
+                    materials[i] = GetMaterialCopy(materials[i], tint, false);
+                }
+
+                renderer.sharedMaterials = materials;
+            }
         }
 
         /// <summary>

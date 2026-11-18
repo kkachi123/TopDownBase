@@ -114,20 +114,20 @@ namespace TopDownBase.Dungeon
         /// <summary>지면 높이. 걸을 수 있는 곳과 그 둘레 HillStart까지는 0이고, 그 바깥만 낮게 솟는다.</summary>
         private float GroundHeightAt(float mapX, float mapZ)
         {
-            if (!UseTerrainGround || HillHeight <= 0f)
+            if (!UseTerrainGround || Env.HillHeight <= 0f)
             {
                 return 0f;
             }
 
-            float beyond = SampleSignedDistance(mapX, mapZ) - HillStart;
+            float beyond = SampleSignedDistance(mapX, mapZ) - Env.HillStart;
             if (beyond <= 0f)
             {
                 return 0f;
             }
 
-            float rise = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(beyond / HillWidth));
-            float noise = Mathf.PerlinNoise(mapX / HillNoiseScale + _noiseOffset.x, mapZ / HillNoiseScale + _noiseOffset.y);
-            return HillHeight * rise * Mathf.Lerp(0.35f, 1f, noise);
+            float rise = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(beyond / Env.HillWidth));
+            float noise = Mathf.PerlinNoise(mapX / Env.HillNoiseScale + _noiseOffset.x, mapZ / Env.HillNoiseScale + _noiseOffset.y);
+            return Env.HillHeight * rise * Mathf.Lerp(0.35f, 1f, noise);
         }
 
         /// <summary>생성기 기준 위치의 지면 높이를 포함한 로컬 좌표.</summary>
@@ -140,7 +140,7 @@ namespace TopDownBase.Dungeon
 
         private void BuildTerrainGround(Transform root)
         {
-            float maxHeight = Mathf.Max(HillHeight, 0.1f);
+            float maxHeight = Mathf.Max(Env.HillHeight, 0.1f);
             int resolution = Mathf.ClosestPowerOfTwo(Mathf.Clamp(HeightmapResolution - 1, 32, 1024)) + 1;
             // 해상도를 먼저 정해야 size가 의도한 값으로 유지된다.
             var data = Track(new TerrainData { name = "DungeonTerrain" });
@@ -162,7 +162,11 @@ namespace TopDownBase.Dungeon
 
             // 흙(공터와 길)과 풀을 거리에 따라 섞어 칠한다. 약한 잡음을 더해 경계선이 고르지 않게 한다.
             data.alphamapResolution = Mathf.ClosestPowerOfTwo(Mathf.Clamp(AlphamapResolution, 64, 2048));
-            data.terrainLayers = new[] { CreateSolidLayer("Clearing", ClearingColor), CreateSolidLayer("Ground", GroundColor) };
+            data.terrainLayers = new[]
+            {
+                CreateLayer("Clearing", Env.ClearingTexture, Env.ClearingColor),
+                CreateLayer("Ground", Env.GroundTexture, Env.GroundColor)
+            };
             int alphaResolution = data.alphamapResolution;
             var weights = new float[alphaResolution, alphaResolution, 2];
             for (int z = 0; z < alphaResolution; z++)
@@ -173,7 +177,7 @@ namespace TopDownBase.Dungeon
                     float mapZ = (z + 0.5f) / alphaResolution * Map.Height;
                     float wobble = Mathf.PerlinNoise(mapX * 0.35f + _noiseOffset.y, mapZ * 0.35f + _noiseOffset.x) - 0.5f;
                     float grass = Mathf.SmoothStep(0f, 1f,
-                        Mathf.InverseLerp(-EdgeBlend, EdgeBlend, SampleSignedDistance(mapX, mapZ) + wobble));
+                        Mathf.InverseLerp(-Env.EdgeBlend, Env.EdgeBlend, SampleSignedDistance(mapX, mapZ) + wobble));
                     weights[z, x, 0] = 1f - grass;
                     weights[z, x, 1] = grass;
                 }
@@ -197,21 +201,33 @@ namespace TopDownBase.Dungeon
             _terrainCollider = terrainObject.GetComponent<TerrainCollider>();
         }
 
-        /// <summary>한 가지 색으로 칠하는 지형 레이어.</summary>
-        private TerrainLayer CreateSolidLayer(string layerName, Color color)
+        /// <summary>
+        /// 지형 레이어. 텍스처가 없으면 한 가지 색으로 칠하고, 있으면 그 텍스처에 색을 곱한다.
+        /// 텍스처 원본은 바꾸지 않는다.
+        /// </summary>
+        private TerrainLayer CreateLayer(string layerName, Texture2D texture, Color color)
         {
-            var texture = Track(new Texture2D(2, 2, TextureFormat.RGBA32, false) { name = $"Dungeon_{layerName}" });
-            texture.SetPixels(new[] { color, color, color, color });
-            texture.Apply();
-
-            return Track(new TerrainLayer
+            var layer = Track(new TerrainLayer
             {
                 name = $"Dungeon_{layerName}",
-                diffuseTexture = texture,
-                tileSize = new Vector2(4f, 4f),
+                tileSize = Vector2.one * Env.TextureTileSize,
                 metallic = 0f,
                 smoothness = 0f
             });
+
+            if (texture != null)
+            {
+                layer.diffuseTexture = texture;
+                // 지형 셰이더가 레이어 색에 곱하는 값(인스펙터의 Color Tint)이다.
+                layer.diffuseRemapMax = color;
+                return layer;
+            }
+
+            var solid = Track(new Texture2D(2, 2, TextureFormat.RGBA32, false) { name = $"Dungeon_{layerName}" });
+            solid.SetPixels(new[] { color, color, color, color });
+            solid.Apply();
+            layer.diffuseTexture = solid;
+            return layer;
         }
 
         private void BuildFlatGround(Transform root)
@@ -220,7 +236,7 @@ namespace TopDownBase.Dungeon
             Vector2 center = Map.Origin + new Vector2(Map.Width, Map.Height) * 0.5f;
             CreatePrimitive(PrimitiveType.Cube, "Ground", root,
                 new Vector3(center.x, -thickness * 0.5f, center.y),
-                new Vector3(Map.Width, thickness, Map.Height), GroundColor, true);
+                new Vector3(Map.Width, thickness, Map.Height), Env.GroundColor, true);
         }
 
         /// <summary>공터와 길을 지면과 다른 색으로 보여 주는 메시 하나. 가로줄 단위로 사각형을 합친다.</summary>
@@ -266,7 +282,7 @@ namespace TopDownBase.Dungeon
             var surface = new GameObject("WalkableSurface");
             surface.transform.SetParent(root, false);
             surface.AddComponent<MeshFilter>().sharedMesh = mesh;
-            surface.AddComponent<MeshRenderer>().sharedMaterial = GetMaterial(ClearingColor, null);
+            surface.AddComponent<MeshRenderer>().sharedMaterial = GetMaterial(Env.ClearingColor, null);
         }
 
         /// <summary>

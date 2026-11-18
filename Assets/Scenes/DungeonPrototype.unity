@@ -276,7 +276,7 @@ Light:
   m_InnerSpotAngle: 21.80208
   m_CookieSize2D: {x: 0.5, y: 0.5}
   m_Shadows:
-    m_Type: 2
+    m_Type: 0
     m_Resolution: -1
     m_CustomResolution: -1
     m_Strength: 1
@@ -577,11 +577,6 @@ MonoBehaviour:
   ObstacleSpacing: 9
   ObstacleRadius: {x: 1.2, y: 2}
   ObstacleHeight: 1.5
-  ObstaclePrefabs:
-  - {fileID: 3710413795780012316, guid: 3bf75210ce831f8469ade0d773def4bd, type: 3}
-  - {fileID: 6720792039176187589, guid: dd09de156ccf3c84cbb8a056096119b3, type: 3}
-  - {fileID: 1444447578966994568, guid: a8cb6106880654d459cdbda67e104157, type: 3}
-  ObstaclePrefabDiameter: 1.5
   EnemySpawnCount: {x: 2, y: 4}
   SpawnEdgeMargin: 2
   SpawnEntranceClearance: 5
@@ -594,37 +589,12 @@ MonoBehaviour:
   GateVisualHeight: 1.2
   GateVisualThickness: 0.6
   GateColor: {r: 0.75, g: 0.25, b: 0.2, a: 1}
+  Environment: {fileID: 11400000, guid: f56801083acfce547b7b7f2dcb18371e, type: 2}
   UseTerrainGround: 1
-  HillHeight: 1
-  HillStart: 2.5
-  HillWidth: 4
-  HillNoiseScale: 12
-  EdgeBlend: 1.2
   HeightmapResolution: 257
   AlphamapResolution: 512
-  GroundColor: {r: 0.33, g: 0.45, b: 0.28, a: 1}
-  ClearingColor: {r: 0.52, g: 0.47, b: 0.38, a: 1}
   PropRendering: 1
-  PropsCastShadows: 1
-  LowPropsCastShadows: 0
   ShadowCullPadding: 8
-  LowProps:
-  - {fileID: 3710413795780012316, guid: 3bf75210ce831f8469ade0d773def4bd, type: 3}
-  - {fileID: 6720792039176187589, guid: dd09de156ccf3c84cbb8a056096119b3, type: 3}
-  - {fileID: 1444447578966994568, guid: a8cb6106880654d459cdbda67e104157, type: 3}
-  - {fileID: 1054032138248285991, guid: 2ee1a2a8ded5d95438ef0c7fcc2b031e, type: 3}
-  - {fileID: 6073838736982132582, guid: 19bd78cf8f1b4364bbae84c3d9456ffe, type: 3}
-  - {fileID: 2138183964518176031, guid: 238937c2717c9ab4b86a8dd6486046cf, type: 3}
-  TallProps:
-  - {fileID: 774170419439871075, guid: e997e5bb7eeb0e44a96013a0e415d6c8, type: 3}
-  - {fileID: 6683425011099793336, guid: e371314f4fb58214e84908a98d75da1b, type: 3}
-  - {fileID: 4578069759007183627, guid: 1f3778ea4300342498a8c4065040269e, type: 3}
-  EdgeDepth: 2
-  EdgeDensity: 0.55
-  RimDensity: 0.85
-  FillDensity: 0.07
-  LowPropScale: {x: 0.7, y: 1.2}
-  TallPropScale: {x: 1.2, y: 2.2}
   CameraClearance: 8
   CameraPitch: 40
   BlockerHeight: 3

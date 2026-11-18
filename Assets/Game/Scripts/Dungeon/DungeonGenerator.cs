@@ -70,11 +70,8 @@ namespace TopDownBase.Dungeon
         [Tooltip("장애물 중심 사이의 최소 거리(유닛).")]
         [Min(2f)] public float ObstacleSpacing = 9f;
         public Vector2 ObstacleRadius = new Vector2(1.2f, 2f);
+        [Tooltip("충돌 기둥의 높이(유닛). 보이는 모양은 Environment의 Obstacles가 정한다.")]
         [Min(0.1f)] public float ObstacleHeight = 1.5f;
-        [Tooltip("장애물로 보여 줄 프리팹. 비워 두면 원기둥을 쓴다. 충돌은 프리팹과 상관없이 기둥 모양이다.")]
-        public GameObject[] ObstaclePrefabs;
-        [Tooltip("ObstaclePrefabs의 대략적인 바닥 지름(유닛). 장애물 반지름에 맞춰 크기를 정하는 데 쓴다.")]
-        [Min(0.1f)] public float ObstaclePrefabDiameter = 1.5f;
 
         [Header("Enemy spawns (combat rooms)")]
         public Vector2Int EnemySpawnCount = new Vector2Int(2, 4);
@@ -98,47 +95,25 @@ namespace TopDownBase.Dungeon
         public bool BuildGates = true;
         [Tooltip("잠금 충돌체의 높이(유닛). 이동체가 넘지 못할 만큼 높아야 한다.")]
         [Min(0.5f)] public float GateHeight = 3f;
-        [Tooltip("잠금 표시의 높이와 두께(유닛). 충돌체와 별개로 보이기만 한다.")]
+        [Tooltip("Environment에 문 프리팹이 없을 때 쓰는 상자의 높이와 두께(유닛). 충돌체와 별개로 보이기만 한다.")]
         [Min(0.1f)] public float GateVisualHeight = 1.2f;
         [Min(0.1f)] public float GateVisualThickness = 0.6f;
         public Color GateColor = new Color(0.75f, 0.25f, 0.2f);
 
+        [Header("Environment")]
+        [Tooltip("지면, 경계 소품, 장애물과 문의 모양. 바꿔도 방 배치와 충돌은 달라지지 않는다. 비워 두면 소품 없이 기본 색 지면만 만든다.")]
+        public DungeonEnvironmentSettings Environment;
+
         [Header("Ground")]
         [Tooltip("켜면 Terrain으로 지면을 만든다. 공터 가장자리가 부드럽게 섞이고 경계 바깥에 낮은 언덕이 생긴다. 끄면 평평한 판과 칸 단위 표면을 쓴다.")]
         public bool UseTerrainGround = true;
-        [Tooltip("경계 바깥 언덕의 최대 높이(유닛). 캐릭터 키(2)보다 낮아야 남쪽 가장자리에서 캐릭터가 가려지지 않는다.")]
-        [Range(0f, 1.8f)] public float HillHeight = 1f;
-        [Tooltip("걸을 수 있는 영역의 끝에서 이 거리(유닛)까지는 평지로 둔다.")]
-        [Min(0.5f)] public float HillStart = 2.5f;
-        [Min(0.5f)] public float HillWidth = 4f;
-        [Min(1f)] public float HillNoiseScale = 12f;
-        [Tooltip("흙과 풀이 섞이는 폭(유닛).")]
-        [Min(0.1f)] public float EdgeBlend = 1.2f;
         public int HeightmapResolution = 257;
         public int AlphamapResolution = 512;
-        public Color GroundColor = new Color(0.33f, 0.45f, 0.28f);
-        public Color ClearingColor = new Color(0.52f, 0.47f, 0.38f);
 
         [Header("Props")]
         public DungeonPropRendering PropRendering = DungeonPropRendering.Instanced;
-        public bool PropsCastShadows = true;
-        [Tooltip("끄면 가장자리의 낮은 소품은 그림자를 드리우지 않는다. 그림자 단계마다 한 번씩 더 그리는 비용이 줄어든다.")]
-        public bool LowPropsCastShadows;
         [Tooltip("화면 밖이라도 이 거리(유닛) 안의 소품은 그린다. 화면 밖 나무의 그림자가 화면 안으로 드리워지기 때문이다.")]
         [Min(0f)] public float ShadowCullPadding = 8f;
-        [Tooltip("경계 가장자리에 놓는 낮은 소품(바위, 덤불). 루트에 메시 하나가 있는 프리팹이어야 묶어 그릴 수 있다.")]
-        public GameObject[] LowProps;
-        [Tooltip("가장자리 바깥에 놓는 키 큰 소품(나무).")]
-        public GameObject[] TallProps;
-        [Tooltip("걸을 수 있는 영역에서 이 거리(유닛) 안쪽의 막힌 칸을 가장자리로 본다.")]
-        [Min(1f)] public float EdgeDepth = 2f;
-        [Range(0f, 1f)] public float EdgeDensity = 0.55f;
-        [Tooltip("걸을 수 있는 곳과 바로 맞닿은 첫 줄(대각선 포함)의 소품 밀도. 높이면 공터와 길의 테두리가 끊기지 않는다.")]
-        [Range(0f, 1f)] public float RimDensity = 0.85f;
-        [Range(0f, 1f)] public float FillDensity = 0.07f;
-        [Tooltip("가장자리 소품의 크기 배율. 크게 하면 소품이 걸을 수 있는 영역 위로 넘어와 바닥을 가린다.")]
-        public Vector2 LowPropScale = new Vector2(0.7f, 1.2f);
-        public Vector2 TallPropScale = new Vector2(1.2f, 2.2f);
         [Tooltip("북쪽으로 이 거리(유닛) 안에 걸을 수 있는 곳이 있으면 키 큰 소품을 놓지 않는다. 카메라가 남쪽에서 내려다보기 때문이다. 소품이 높으면 그 높이가 가리는 거리까지 자동으로 늘어난다.")]
         [Min(0f)] public float CameraClearance = 8f;
         [Tooltip("게임 카메라가 내려다보는 각도. 키 큰 소품이 바닥을 가리는 거리를 계산하는 데 쓴다.")]
@@ -154,6 +129,7 @@ namespace TopDownBase.Dungeon
         [Header("Look")]
         [Tooltip("비워 두면 현재 렌더 파이프라인의 기본 머티리얼을 쓴다.")]
         public Material BaseMaterial;
+        [Tooltip("Environment에 장애물 모양이 없을 때 쓰는 원기둥 색.")]
         public Color ObstacleColor = new Color(0.55f, 0.4f, 0.25f);
         public Color StartColor = new Color(0.2f, 0.75f, 0.3f);
         public Color EnemyColor = new Color(0.85f, 0.2f, 0.2f);
@@ -176,6 +152,7 @@ namespace TopDownBase.Dungeon
         private DungeonRoom _bossGateRoom;
         private DungeonPortal _bossPortal;
         private DungeonKeyPickup _keyPickup;
+        private DungeonEnvironmentSettings _fallbackEnvironment;
 
         public DungeonLayout Layout { get; private set; }
         /// <summary>걸을 수 있는 영역 지도. 방 모양, 길, 입구, 장애물, 스폰 위치를 담는다.</summary>
@@ -197,6 +174,27 @@ namespace TopDownBase.Dungeon
 
         /// <summary>플레이어를 놓을 위치(시작 공터 중심).</summary>
         public override Vector3 StartPosition => StartRoom != null ? StartRoom.transform.position : transform.position;
+
+        /// <summary>이번 생성에 쓰는 환경. Environment가 비어 있으면 소품 없는 기본값이다.</summary>
+        private DungeonEnvironmentSettings Env
+        {
+            get
+            {
+                if (Environment != null)
+                {
+                    return Environment;
+                }
+
+                if (_fallbackEnvironment == null)
+                {
+                    _fallbackEnvironment = ScriptableObject.CreateInstance<DungeonEnvironmentSettings>();
+                    _fallbackEnvironment.name = "DefaultEnvironment";
+                    _fallbackEnvironment.hideFlags = HideFlags.DontSave;
+                }
+
+                return _fallbackEnvironment;
+            }
+        }
 
         /// <summary>이 생성기의 NavMeshSurface가 쓰는 에이전트 반지름.</summary>
         public float AgentRadius => NavMesh.GetSettingsByID(GetNavMeshSurface().agentTypeID).agentRadius;
@@ -303,7 +301,8 @@ namespace TopDownBase.Dungeon
             string portalReport = _bossPortal.HasDestination
                 ? (_bossPortal.IsLocked ? "locked by key" : "open")
                 : "no destination";
-            LastReport = $"seed {Seed}: rooms {Layout.Rooms.Count}, boss path {Layout.BossPathLength}, " +
+            LastReport = $"seed {Seed}: environment {(Environment != null ? Environment.name : "none")}, " +
+                         $"rooms {Layout.Rooms.Count}, boss path {Layout.BossPathLength}, " +
                          $"item rooms {Layout.ItemRoomCount}, entrances {Map.Entrances.Count}, " +
                          $"enemy spawns {Map.EnemySpawns.Count}, portal {portalReport}, navmesh {navMeshReport}, " +
                          $"objects {GeneratedObjectCount}, {LastGenerateMilliseconds:0} ms";
@@ -358,6 +357,12 @@ namespace TopDownBase.Dungeon
 
             _createdAssets.Clear();
             _materialsByColor.Clear();
+
+            if (_fallbackEnvironment != null)
+            {
+                DestroyImmediate(_fallbackEnvironment);
+                _fallbackEnvironment = null;
+            }
         }
 
         /// <summary>맵 전체를 감싸는 월드 영역. 전체 보기 카메라에 쓴다.</summary>
@@ -455,25 +460,22 @@ namespace TopDownBase.Dungeon
                 _obstacleColliders.Add(capsule);
 
                 float yaw = (float)rng.NextDouble() * 360f;
-                if (ObstaclePrefabs != null && ObstaclePrefabs.Length > 0)
+                DungeonObstacleVisual look = PickWeighted(Env.Obstacles, rng);
+                if (look != null)
                 {
-                    GameObject prefab = ObstaclePrefabs[rng.Next(ObstaclePrefabs.Length)];
-                    if (prefab != null)
+                    GameObject visual = Instantiate(look.Prefab, obstacleObject.transform);
+                    visual.name = look.Prefab.name;
+                    visual.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+                    visual.transform.localScale = look.Prefab.transform.localScale * (obstacle.Radius * 2f / look.Diameter);
+                    // 프리팹에 달린 충돌체(MeshCollider 등)는 뗀다. 충돌은 위의 기둥이 맡고,
+                    // 남겨 두면 NavMesh가 읽기 권한 없는 메시를 소스로 모으려 한다.
+                    foreach (Collider collider in visual.GetComponentsInChildren<Collider>(true))
                     {
-                        GameObject visual = Instantiate(prefab, obstacleObject.transform);
-                        visual.name = prefab.name;
-                        visual.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
-                        visual.transform.localScale = prefab.transform.localScale
-                                                      * (obstacle.Radius * 2f / ObstaclePrefabDiameter);
-                        // 프리팹에 달린 충돌체(MeshCollider 등)는 뗀다. 충돌은 위의 기둥이 맡고,
-                        // 남겨 두면 NavMesh가 읽기 권한 없는 메시를 소스로 모으려 한다.
-                        foreach (Collider collider in visual.GetComponentsInChildren<Collider>(true))
-                        {
-                            DestroyImmediate(collider);
-                        }
-
-                        continue;
+                        DestroyImmediate(collider);
                     }
+
+                    ApplyTint(visual, look.Tint);
+                    continue;
                 }
 
                 CreatePrimitive(PrimitiveType.Cylinder, "Visual", obstacleObject.transform,
@@ -621,9 +623,24 @@ namespace TopDownBase.Dungeon
                 obstacle.center = box.center;
                 obstacle.carving = true;
 
-                CreatePrimitive(PrimitiveType.Cube, "Visual", gate.transform,
-                    new Vector3(0f, GateVisualHeight * 0.5f, 0f),
-                    new Vector3(entrance.Width, GateVisualHeight, GateVisualThickness), GateColor, false);
+                if (Env.GatePrefab != null)
+                {
+                    GameObject visual = Instantiate(Env.GatePrefab, gate.transform);
+                    visual.name = Env.GatePrefab.name;
+                    Vector3 scale = Env.GatePrefab.transform.localScale;
+                    scale.x *= entrance.Width / Env.GatePrefabWidth;
+                    visual.transform.localScale = scale;
+                    foreach (Collider collider in visual.GetComponentsInChildren<Collider>(true))
+                    {
+                        DestroyImmediate(collider);
+                    }
+                }
+                else
+                {
+                    CreatePrimitive(PrimitiveType.Cube, "Visual", gate.transform,
+                        new Vector3(0f, GateVisualHeight * 0.5f, 0f),
+                        new Vector3(entrance.Width, GateVisualHeight, GateVisualThickness), GateColor, false);
+                }
 
                 gate.SetActive(false);
                 _rooms[entrance.RoomIndex].AddDoorBlocker(gate);
